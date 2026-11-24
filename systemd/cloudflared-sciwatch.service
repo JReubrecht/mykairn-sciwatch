@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Tunnel sortant pour myKairn SciWatch (Freebox VM -> mykairn.fr)
+After=network-online.target mykairn-sciwatch-web.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=freebox
+EnvironmentFile=-/etc/mykairn-sciwatch-tunnel.env
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

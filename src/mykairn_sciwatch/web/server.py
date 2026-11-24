@@ -4,10 +4,18 @@ Serveur HTTP/REST API multithread léger (bibliothèque standard Python) pour le
 
 from __future__ import annotations
 
+import hmac
 import json
+import re
+import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional
+
+_VALID_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_RUN_LOCK = threading.Lock()
+_MAX_POST_BYTES = 65_536
+_PROXY_HEADERS = ("CF-Connecting-IP", "CF-Ray", "X-Forwarded-For", "X-Forwarded-Host", "Forwarded")
 
 from mykairn_sciwatch.config import AppConfig, list_topic_profiles, resolve_profile, save_topic_profile
 from mykairn_sciwatch.pipeline import SciWatchPipeline
@@ -30,12 +38,61 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
         # Journalisation sobre compatible journalctl systemd
         print(f"[SciWatch-Web] {self.address_string()} - {fmt % args}")
 
+    def _authenticate_request(self) -> Optional[str]:
+        """Retourne 'admin', 'reader' ou None selon le secret HMAC et la provenance réseau."""
+        cfg = self.pipeline.config
+        header_secret = (self.headers.get("X-SciWatch-Secret") or "").strip()
+        auth_hdr = (self.headers.get("Authorization") or "").strip()
+        bearer_secret = auth_hdr[7:].strip() if auth_hdr.lower().startswith("bearer ") else ""
+        provided = header_secret or bearer_secret
+
+        req_role = (self.headers.get("X-SciWatch-Role") or "").strip().lower()
+        resolved_role = "admin" if req_role == "admin" else "reader"
+
+        has_proxy_headers = any(bool(self.headers.get(h)) for h in _PROXY_HEADERS)
+        client_ip = self.client_address[0] if self.client_address else ""
+
+        if cfg.api_secret:
+            if provided and hmac.compare_digest(
+                provided.encode("utf-8"), cfg.api_secret.encode("utf-8")
+            ):
+                return resolved_role
+            if (
+                not has_proxy_headers
+                and cfg.allow_lan_direct
+                and cfg.trusted_lan_prefixes
+                and client_ip.startswith(cfg.trusted_lan_prefixes)
+            ):
+                # Accès direct LAN maison (192.168.x.x / 10.x.x.x) autorisé sans clé
+                return "admin"
+            return None
+
+        # Sans SCIWATCH_API_SECRET (tests/dev local), respecte X-SciWatch-Role si fourni
+        return resolved_role if req_role in ("admin", "reader") else "admin"
+
+    def _validate_slug_param(self, raw: Optional[str]) -> Optional[str]:
+        if raw is None or raw == "":
+            return None
+        val = raw.strip()
+        if not _VALID_SLUG_RE.match(val):
+            return "__INVALID__"
+        return val
+
+    def _send_security_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+
     def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = (self.headers.get("Origin") or "").strip()
+        allowed_origin = self.pipeline.config.cors_allowed_origin
+        if origin and allowed_origin and origin == allowed_origin:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -52,6 +109,7 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if filename:
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -64,11 +122,11 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             vals = qs.get(key)
             return vals[0] if vals else default
 
-        if path == "/":
-            self._send_text(DASHBOARD_HTML)
-            return
-
         if path == "/api/health":
+            auth_role = self._authenticate_request()
+            if auth_role is None:
+                self._send_json({"status": "ok", "service": "mykairn-sciwatch"})
+                return
             profiles = list_topic_profiles(self.pipeline.config.profiles_dir)
             self._send_json(
                 {
@@ -82,19 +140,34 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        role = self._authenticate_request()
+        if role is None:
+            self._send_json({"error": "Non autorisé — clé SciWatch requise."}, status=401)
+            return
+
+        if path == "/":
+            self._send_text(DASHBOARD_HTML)
+            return
+
         if path == "/api/profiles":
             profiles = list_topic_profiles(self.pipeline.config.profiles_dir)
             self._send_json({"profiles": [p.to_dict() for p in profiles]})
             return
 
         if path == "/api/analytics":
-            topic = q_val("topic") or None
+            topic = self._validate_slug_param(q_val("topic") or None)
+            if topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
             analytics = self.pipeline.store.get_analytics(topic_slug=topic)
             self._send_json(analytics)
             return
 
         if path == "/api/publications":
-            topic = q_val("topic") or None
+            topic = self._validate_slug_param(q_val("topic") or None)
+            if topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
             theme = q_val("theme") or None
             pub_type = q_val("type") or None
             athlete_level = q_val("athlete_level") or None
@@ -103,7 +176,7 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             sort_by = q_val("sort", "overall_score")
             min_q = float(q_val("min_quality", "0") or 0)
             min_s = float(q_val("min_scope", "0") or 0)
-            limit = int(q_val("limit", "150") or 150)
+            limit = min(500, max(1, int(q_val("limit", "150") or 150)))
 
             pubs = self.pipeline.store.query_publications(
                 topic_slug=topic,
@@ -121,13 +194,19 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/runs":
-            topic = q_val("topic") or None
+            topic = self._validate_slug_param(q_val("topic") or None)
+            if topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
             runs = self.pipeline.store.list_runs(topic_slug=topic)
             self._send_json({"runs": runs})
             return
 
         if path == "/api/export":
-            topic = q_val("topic", "trail_running_coaching")
+            topic = self._validate_slug_param(q_val("topic", "trail_running_coaching"))
+            if not topic or topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
             fmt = q_val("format", "json").lower()
             pubs = self.pipeline.store.query_publications(topic_slug=topic, limit=1000)
             analytics = self.pipeline.store.get_analytics(topic_slug=topic)
@@ -195,7 +274,24 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
-        content_len = int(self.headers.get("Content-Length", "0") or 0)
+
+        role = self._authenticate_request()
+        if role is None:
+            self._send_json({"error": "Non autorisé — clé SciWatch requise."}, status=401)
+            return
+        if role != "admin":
+            self._send_json({"error": "Action réservée à l'administrateur."}, status=403)
+            return
+
+        try:
+            content_len = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self._send_json({"error": "Invalid Content-Length"}, status=400)
+            return
+        if content_len < 0 or content_len > _MAX_POST_BYTES:
+            self._send_json({"error": "Payload trop volumineux (max 64 Ko)."}, status=413)
+            return
+
         raw_body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
         try:
             body = json.loads(raw_body) if raw_body else {}
@@ -204,10 +300,20 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/run":
-            topic = str(body.get("topic", "trail_running_coaching"))
+            topic = self._validate_slug_param(str(body.get("topic", "trail_running_coaching")))
+            if not topic or topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
             mode = str(body.get("mode", "audit"))
+            if mode not in ("audit", "watch"):
+                self._send_json({"error": "Mode invalide (audit ou watch)."}, status=400)
+                return
             days = body.get("lookback_days")
             max_per_source = body.get("max_per_source")
+
+            if not _RUN_LOCK.acquire(blocking=False):
+                self._send_json({"error": "Un audit ou une veille est déjà en cours."}, status=409)
+                return
             try:
                 summary = self.pipeline.run_for_profile(
                     profile_or_slug=topic,
@@ -218,6 +324,8 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(summary.to_dict())
             except Exception as err:
                 self._send_json({"status": "failed", "error": str(err)}, status=500)
+            finally:
+                _RUN_LOCK.release()
             return
 
         if path == "/api/profiles":
