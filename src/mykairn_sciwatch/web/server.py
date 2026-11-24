@@ -321,7 +321,22 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                     lookback_days=int(days) if days else None,
                     max_per_source=int(max_per_source) if max_per_source else None,
                 )
-                self._send_json(summary.to_dict())
+                result_payload = summary.to_dict()
+                if (
+                    self.pipeline.config.mykairn_webhook_url
+                    and self.pipeline.config.mykairn_webhook_secret
+                ):
+                    try:
+                        prof = resolve_profile(topic, self.pipeline.config.profiles_dir)
+                        all_pubs = self.pipeline.store.query_publications(
+                            topic_slug=prof.slug,
+                            limit=500,
+                        )
+                        pack = export_to_mykairn_knowledge_pack(prof, all_pubs)
+                        result_payload["webhook_synced"] = self.pipeline.notifier.push_webhook(pack)
+                    except Exception:
+                        result_payload["webhook_synced"] = False
+                self._send_json(result_payload)
             except Exception as err:
                 self._send_json({"status": "failed", "error": str(err)}, status=500)
             finally:

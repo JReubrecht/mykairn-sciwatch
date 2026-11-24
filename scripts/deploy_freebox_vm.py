@@ -30,8 +30,8 @@ VM_PASS = os.environ.get("FREEBOX_VM_PASS", "").strip()
 VM_TARGET_DIR = os.environ.get("FREEBOX_VM_DIR", "/opt/mykairn-sciwatch")
 
 
-def build_project_tarball(tar_path: Path) -> None:
-    """Crée une archive tar.gz sur disque contenant les fichiers du projet et les rapports initiaux."""
+def build_project_tarball(tar_path: Path, include_data: bool = False) -> None:
+    """Crée une archive tar.gz sur disque contenant le code et les profils (sans écraser data/reports par défaut)."""
     include_paths = [
         "pyproject.toml",
         "README.md",
@@ -43,9 +43,9 @@ def build_project_tarball(tar_path: Path) -> None:
         "profiles",
         "systemd",
         "tests",
-        "reports",
-        "data",
     ]
+    if include_data:
+        include_paths.extend(["reports", "data"])
     with tarfile.open(str(tar_path), mode="w:gz") as tar:
         for rel in include_paths:
             full_path = ROOT_DIR / rel
@@ -101,7 +101,7 @@ def run_remote_cmd(argv: list[str], timeout: int = 180) -> str:
     return run_pty_process(argv, timeout=timeout)
 
 
-def deploy_to_vm(run_initial_audit: bool = False) -> None:
+def deploy_to_vm(run_initial_audit: bool = False, include_data: bool = False) -> None:
     print(f"📦 Empaquetage de myKairn SciWatch depuis {ROOT_DIR}...")
     with tempfile.NamedTemporaryFile(prefix="mykairn-sciwatch-", suffix=".tar.gz", delete=False) as tmp:
         local_tar = Path(tmp.name)
@@ -114,7 +114,7 @@ def deploy_to_vm(run_initial_audit: bool = False) -> None:
     sudo_prefix = f"echo '{VM_PASS}' | sudo -S " if VM_PASS else "sudo "
 
     try:
-        build_project_tarball(local_tar)
+        build_project_tarball(local_tar, include_data=include_data)
         size_kb = local_tar.stat().st_size / 1024
         print(f"🚀 Transfert SCP ({size_kb:.1f} Ko) vers {VM_USER}@{VM_IP}:/tmp/sciwatch.tar.gz...")
 
@@ -204,5 +204,10 @@ if __name__ == "__main__":
         action="store_true",
         help="Relancer un Audit État de l'Art Trail Running directement sur la VM après déploiement",
     )
+    parser.add_argument(
+        "--include-data",
+        action="store_true",
+        help="Inclure data/ et reports/ locaux dans l'archive (attention: écrase la base SQLite distante)",
+    )
     args = parser.parse_args()
-    deploy_to_vm(run_initial_audit=args.run_audit)
+    deploy_to_vm(run_initial_audit=args.run_audit, include_data=args.include_data)
