@@ -121,6 +121,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--host", default=None, help="Hôte d'écoute (défaut: 0.0.0.0)")
     p_serve.add_argument("--port", type=int, default=None, help="Port d'écoute (défaut: 8095)")
 
+    # 7. push (synchronisation vers mykairn.fr /api/science/packs)
+    p_push = sub.add_parser(
+        "push",
+        help="Pousser le Knowledge Pack 6D d'un sujet vers mykairn.fr (/api/science/packs)",
+    )
+    p_push.add_argument("--profile", "-p", default="trail_running_coaching", help="Slug du profil")
+    p_push.add_argument(
+        "--url",
+        default=None,
+        help="URL de destination (défaut: MYKAIRN_WEBHOOK_URL ou https://www.mykairn.fr/api/science/packs)",
+    )
+    p_push.add_argument(
+        "--secret",
+        default=None,
+        help="Secret Webhook (défaut: MYKAIRN_WEBHOOK_SECRET)",
+    )
+
     return parser
 
 
@@ -211,6 +228,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         port = args.port or config.port
         run_web_server(host=host, port=port, config=config)
         return 0
+
+    if args.command == "push":
+        pipeline = SciWatchPipeline(config)
+        profile = resolve_profile(args.profile, config.profiles_dir)
+        pubs = pipeline.store.query_publications(topic_slug=profile.slug, limit=500)
+        pack = export_to_mykairn_knowledge_pack(profile, pubs)
+        if args.url:
+            config.mykairn_webhook_url = args.url
+        elif not config.mykairn_webhook_url:
+            config.mykairn_webhook_url = "https://www.mykairn.fr/api/science/packs"
+        if args.secret:
+            config.mykairn_webhook_secret = args.secret
+        ok = pipeline.notifier.push_webhook(pack)
+        if ok:
+            print(
+                f"✅ Knowledge Pack '{profile.slug}' ({len(pubs)} études) synchronisé vers {config.mykairn_webhook_url}"
+            )
+            return 0
+        print(
+            f"❌ Échec de la synchronisation vers {config.mykairn_webhook_url} (vérifiez MYKAIRN_WEBHOOK_SECRET)."
+        )
+        return 1
 
     return 0
 
