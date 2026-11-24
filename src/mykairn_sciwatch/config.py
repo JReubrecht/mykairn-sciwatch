@@ -48,6 +48,20 @@ class AppConfig:
         self.host = os.environ.get("SCIWATCH_HOST", "0.0.0.0")
         self.port = int(os.environ.get("SCIWATCH_PORT", "8095"))
 
+        # Sécurité API & Tunnel Freebox <-> mykairn.fr
+        self.api_secret = os.environ.get("SCIWATCH_API_SECRET", "").strip()
+        self.allow_lan_direct = os.environ.get("SCIWATCH_ALLOW_LAN_DIRECT", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.trusted_lan_prefixes = tuple(
+            p.strip()
+            for p in os.environ.get("SCIWATCH_TRUSTED_LAN_PREFIXES", "192.168.,10.").split(",")
+            if p.strip()
+        )
+        self.cors_allowed_origin = os.environ.get("SCIWATCH_CORS_ORIGIN", "https://mykairn.fr").strip()
+
         # APIs scientifiques
         self.ncbi_api_key = os.environ.get("NCBI_API_KEY", "").strip()
         self.ncbi_email = os.environ.get("NCBI_EMAIL", "contact@mykairn.fr").strip()

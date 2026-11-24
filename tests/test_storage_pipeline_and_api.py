@@ -8,6 +8,7 @@ import json
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from mykairn_sciwatch.web.server import create_http_server
 
 class TestStoragePipelineAndApi(unittest.TestCase):
     def test_sqlite_store_and_reports_and_api(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             tmp_dir = Path(tmp)
             cfg = AppConfig(base_dir=tmp_dir)
             cfg.db_path = tmp_dir / "data" / "test_sciwatch.db"
@@ -133,6 +134,77 @@ class TestStoragePipelineAndApi(unittest.TestCase):
                 ) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     self.assertEqual(data["count"], 1)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_api_security_secret_roles_lan_and_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            tmp_dir = Path(tmp)
+            cfg = AppConfig(base_dir=tmp_dir)
+            cfg.db_path = tmp_dir / "data" / "test_sec.db"
+            cfg.reports_dir = tmp_dir / "reports"
+            cfg.profiles_dir = Path(__file__).resolve().parent.parent / "profiles"
+            cfg.api_secret = "super-secret-token-xyz"
+            cfg.allow_lan_direct = True
+            cfg.trusted_lan_prefixes = ("192.168.",)
+            cfg.ensure_dirs()
+
+            server = create_http_server(host="127.0.0.1", port=0, config=cfg)
+            port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                # 1. /api/health stays public but minimal when unauthenticated
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=5) as resp:
+                    health = json.loads(resp.read().decode("utf-8"))
+                    self.assertEqual(health["status"], "ok")
+                    self.assertNotIn("llm_provider", health)
+
+                # 2. Unauthenticated GET /api/profiles -> 401
+                with self.assertRaises(urllib.error.HTTPError) as ctx401:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/api/profiles", timeout=5)
+                self.assertEqual(ctx401.exception.code, 401)
+
+                # 3. Proxy headers spoof even from 127.0.0.1 -> still 401 without secret
+                req_proxy = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/profiles",
+                    headers={"CF-Connecting-IP": "192.168.1.50"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as ctx_proxy:
+                    urllib.request.urlopen(req_proxy, timeout=5)
+                self.assertEqual(ctx_proxy.exception.code, 401)
+
+                # 4. Valid secret + reader role -> 200 on GET, 403 on POST /api/run & /api/profiles
+                req_reader_get = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/profiles",
+                    headers={"X-SciWatch-Secret": cfg.api_secret, "X-SciWatch-Role": "reader"},
+                )
+                with urllib.request.urlopen(req_reader_get, timeout=5) as resp:
+                    self.assertEqual(resp.status, 200)
+
+                req_reader_post = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/run",
+                    data=b'{"topic":"trail_running_coaching","mode":"watch"}',
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-SciWatch-Secret": cfg.api_secret,
+                        "X-SciWatch-Role": "reader",
+                    },
+                    method="POST",
+                )
+                with self.assertRaises(urllib.error.HTTPError) as ctx403:
+                    urllib.request.urlopen(req_reader_post, timeout=5)
+                self.assertEqual(ctx403.exception.code, 403)
+
+                # 5. Path traversal attempt in topic -> 400
+                req_traversal = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/export?topic=../../etc/passwd&format=markdown",
+                    headers={"X-SciWatch-Secret": cfg.api_secret, "X-SciWatch-Role": "reader"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as ctx400:
+                    urllib.request.urlopen(req_traversal, timeout=5)
+                self.assertEqual(ctx400.exception.code, 400)
             finally:
                 server.shutdown()
                 server.server_close()

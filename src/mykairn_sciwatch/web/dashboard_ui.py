@@ -644,6 +644,183 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       z-index: 100;
       box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
     }
+
+    .mobile-only-btn {
+      display: none;
+    }
+
+    .filters-collapsible {
+      display: contents;
+    }
+
+    @media (max-width: 1024px) {
+      .analytics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+      .navbar-inner {
+        padding: 12px 16px;
+      }
+      .container {
+        padding: 16px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      html, body {
+        overflow-x: hidden;
+      }
+      body {
+        padding-bottom: 48px;
+      }
+      .top-banner {
+        padding: 6px 12px;
+        font-size: 0.68rem;
+      }
+      .top-banner-desc {
+        display: none;
+      }
+      .navbar-inner {
+        padding: 10px 12px;
+        gap: 8px;
+      }
+      .brand-wordmark {
+        font-size: 18px;
+      }
+      .brand-sub {
+        display: none;
+      }
+      .mobile-only-btn {
+        display: inline-flex;
+        padding: 7px 11px;
+        font-size: 0.78rem;
+      }
+      .toolbar {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        padding-top: 8px;
+        border-top: 1px solid var(--mk-border-light);
+      }
+      .toolbar.mobile-open {
+        display: flex;
+      }
+      .toolbar select,
+      .toolbar button {
+        width: 100%;
+        justify-content: center;
+      }
+      .container {
+        padding: 12px;
+      }
+      .hero-banner {
+        padding: 16px;
+        border-radius: 12px;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .hero-title {
+        font-size: 1.12rem;
+      }
+      .hero-desc {
+        font-size: 0.78rem;
+      }
+      .hero-actions {
+        width: 100%;
+      }
+      .hero-actions button {
+        flex: 1 1 auto;
+        justify-content: center;
+        font-size: 0.75rem;
+        padding: 7px 10px;
+      }
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .kpi-card {
+        padding: 12px;
+      }
+      .kpi-value {
+        font-size: 1.28rem;
+      }
+      .kpi-label {
+        font-size: 9.5px;
+      }
+      .analytics-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .panel {
+        padding: 14px;
+      }
+      .filters-bar {
+        grid-template-columns: 1fr;
+        padding: 12px 14px;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .filters-collapsible {
+        display: none;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      .filters-collapsible.mobile-open {
+        display: grid;
+      }
+      .pub-card {
+        padding: 14px;
+        border-radius: 12px;
+      }
+      .pub-title {
+        font-size: 0.98rem;
+        line-height: 1.35;
+      }
+      .pub-meta {
+        font-size: 0.76rem;
+      }
+      .pub-summary,
+      .pub-takeaway {
+        font-size: 0.8rem;
+        padding: 10px 12px;
+      }
+      .badge {
+        font-size: 10px;
+        padding: 2px 8px;
+      }
+      .pub-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pub-links a {
+        margin-right: 0;
+        word-break: break-all;
+      }
+      .pub-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .modal-backdrop {
+        padding: 10px;
+        align-items: flex-end;
+      }
+      .modal {
+        padding: 18px;
+        max-height: 90dvh;
+        overflow-y: auto;
+        border-radius: 14px;
+      }
+      .status-toast {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        font-size: 0.8rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -652,11 +829,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="top-banner-inner">
       <div>
         <span class="top-banner-tag">[ALBÈRES PERFORMANCE · SCIWATCH 6D]</span>
-        <span>Veille & Audit Scientifique Multi-Sources (PubMed · OpenAlex · Semantic Scholar · Crossref)</span>
+        <span class="top-banner-desc">Veille & Audit Scientifique Multi-Sources (PubMed · OpenAlex · Semantic Scholar · Crossref)</span>
       </div>
       <div class="top-banner-status">
         <span class="status-dot"></span>
-        <span>VM FREEBOX 192.168.1.170:8095 · ENGINE ACTIF</span>
+        <span>ENDURANCE LAB · MOTEUR 6D ACTIF</span>
       </div>
     </div>
   </div>
@@ -689,7 +866,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
       </a>
 
-      <div class="toolbar">
+      <button type="button" class="btn-outline mobile-only-btn" id="btnToggleToolbar" onclick="toggleMobileToolbar()">⚙️ Actions</button>
+
+      <div class="toolbar" id="mainToolbar">
         <select id="profileSelect" onchange="onProfileChange()" aria-label="Sélectionner le sujet d'audit"></select>
         <button class="btn-outline" onclick="openNewTopicModal()">➕ Nouveau Sujet à Auditer</button>
         <button class="btn-coral" id="btnAudit" onclick="triggerRun('audit')">🚀 Lancer Audit État de l'Art</button>
@@ -784,6 +963,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <label>Recherche Plein Texte</label>
         <input type="text" id="filterSearch" placeholder="ex: polarized, downhill, gut training, HRV..." oninput="loadPublications()" />
       </div>
+      <button type="button" class="btn-outline mobile-only-btn" id="btnToggleFilters" onclick="toggleMobileFilters()" style="width:100%;justify-content:center;">🔎 Filtres &amp; Tri (D1–D4)</button>
+      <div class="filters-collapsible" id="filtersCollapsible">
       <div class="filter-group">
         <label>Thème Scientifique (D2)</label>
         <select id="filterTheme" onchange="loadPublications()"><option value="">Tous les thèmes</option></select>
@@ -819,6 +1000,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
       <div class="filter-group">
         <button class="btn-outline" style="width:100%;justify-content:center;" onclick="resetFilters()">Réinitialiser</button>
+      </div>
       </div>
     </div>
 
@@ -869,6 +1051,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       t.textContent = msg;
       t.style.display = "block";
       setTimeout(() => { t.style.display = "none"; }, 4500);
+    }
+
+    function toggleMobileToolbar() {
+      const tb = document.getElementById("mainToolbar");
+      if (tb) tb.classList.toggle("mobile-open");
+    }
+
+    function toggleMobileFilters() {
+      const box = document.getElementById("filtersCollapsible");
+      if (box) box.classList.toggle("mobile-open");
     }
 
     function updateHeroHeader() {
