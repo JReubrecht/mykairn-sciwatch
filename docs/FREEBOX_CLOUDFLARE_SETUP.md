@@ -21,9 +21,9 @@ Ce guide permet d'exposer `mykairn-sciwatch` (port local `8095` sur la VM Freebo
    ```
    *(Redémarrer le service : `sudo systemctl restart mykairn-sciwatch-web.service`)*
 
-3. **Installer `cloudflared` (tunnel sortant léger)** :
+3. **Installer `cloudflared` (tunnel sortant léger — `arm64` pour VM Freebox Delta `aarch64`, ou `amd64` sur PC x86_64)** :
    ```bash
-   curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+   curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o /tmp/cloudflared
    sudo install /tmp/cloudflared /usr/local/bin/cloudflared && rm -f /tmp/cloudflared
    ```
 
