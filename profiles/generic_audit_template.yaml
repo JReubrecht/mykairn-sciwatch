@@ -1,0 +1,83 @@
+slug: generic_audit_template
+name: "Modèle Générique d'Audit Scientifique Multi-Disciplinaire"
+description: >
+  Gabarit de référence illustrant comment configurer un nouvel audit ou une nouvelle veille
+  scientifique sur n'importe quel sujet (santé, IA, sciences cognitives, écologie, ingénierie).
+domain: general_science
+language: fr
+audit_start_year: 2018
+watch_lookback_days: 30
+max_results_per_source: 25
+min_relevance_score: 10.0
+
+queries:
+  - '("wearable sensors" OR "heart rate variability") AND ("machine learning" OR "readiness" OR "fatigue prediction")'
+
+inclusion_keywords:
+  - wearable
+  - heart rate variability
+  - machine learning
+  - fatigue
+  - prediction
+  - monitoring
+
+exclusion_keywords:
+  - retracted
+  - erratum
+
+high_impact_journals:
+  - "Nature"
+  - "NPJ Digital Medicine"
+  - "Sensors"
+  - "Sports Medicine"
+
+themes:
+  - slug: algorithms_models
+    name: "Modèles, Algorithmes & Prédiction"
+    description: "Architectures prédictives, validation croisée et fiabilité des modèles."
+    weight: 1.2
+    keywords:
+      - machine learning
+      - deep learning
+      - algorithm
+      - prediction
+      - model
+      - accuracy
+  - slug: sensors_biomarkers
+    name: "Capteurs Embarqués & Biomarqueurs Physiologiques"
+    description: "Qualité du signal PPG/ECG, VFC/HRV, sommeil et biomarqueurs."
+    weight: 1.1
+    keywords:
+      - wearable
+      - sensor
+      - hrv
+      - heart rate variability
+      - ppg
+      - sleep
+  - slug: real_world_validation
+    name: "Validation Terrain & Applications Pratiques"
+    description: "Déploiement en conditions réelles, acceptabilité et aide à la décision."
+    weight: 1.2
+    keywords:
+      - field
+      - real-world
+      - validation
+      - coaching
+      - decision
+      - practical
+
+target_scopes:
+  all_levels:
+    - general
+    - population
+    - all
+  recreational_amateur:
+    - consumer
+    - amateur
+    - recreational
+  trained_competitive:
+    - trained
+    - athlete
+  elite_pro:
+    - elite
+    - clinical

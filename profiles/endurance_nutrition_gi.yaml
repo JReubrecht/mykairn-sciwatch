@@ -1,0 +1,93 @@
+slug: endurance_nutrition_gi
+name: "Nutrition Sportive, Gut Training & Prévention GI en Ultra-Endurance"
+description: >
+  Audit thématique ciblé sur la périodisation nutritionnelle, l'absorption des glucides
+  à haute dose (60-120 g/h), l'hydratation, le microbiote et la prévention des troubles
+  gastro-intestinaux chez les athlètes d'endurance et d'ultra-trail.
+domain: sports_nutrition
+language: fr
+audit_start_year: 2016
+watch_lookback_days: 30
+max_results_per_source: 25
+min_relevance_score: 12.0
+
+queries:
+  - '("ultra-endurance" OR "ultramarathon" OR "trail running") AND ("gastrointestinal" OR "gut training" OR "carbohydrate intake")'
+  - '("endurance athletes" OR "marathon" OR "ultra-trail") AND ("exogenous carbohydrate oxidation" OR "hydrogel" OR "fructose" OR "maltodextrin")'
+  - '("exercise-induced gastrointestinal syndrome" OR "EIGS") AND (running OR endurance)'
+
+inclusion_keywords:
+  - carbohydrate
+  - gastrointestinal
+  - gut training
+  - hydration
+  - sodium
+  - ultra-endurance
+  - endurance
+  - running
+  - fueling
+
+exclusion_keywords:
+  - mouse
+  - mice
+  - rat
+  - bovine
+
+high_impact_journals:
+  - "Sports Medicine"
+  - "Journal of the International Society of Sports Nutrition"
+  - "Nutrients"
+  - "International Journal of Sport Nutrition and Exercise Metabolism"
+  - "Medicine & Science in Sports & Exercise"
+
+themes:
+  - slug: high_carb_oxidation_gut_training
+    name: "Glucides Haute Dose (60-120 g/h) & Gut Training"
+    description: "Ratios glucose:fructose, hydrogels, entraînement digestif et oxydation glucidique."
+    weight: 1.3
+    keywords:
+      - carbohydrate
+      - fructose
+      - maltodextrin
+      - glucose
+      - hydrogel
+      - gut training
+      - oxidation
+  - slug: gi_distress_prevention
+    name: "Syndrome Gastro-Intestinal à l'Effort (EIGS) & Prévention"
+    description: "Physiopathologie des troubles digestifs en course, FODMAP, probiotiques et chaleur."
+    weight: 1.2
+    keywords:
+      - gastrointestinal
+      - eigs
+      - nausea
+      - vomiting
+      - cramp
+      - fodmap
+      - microbiome
+      - permeability
+  - slug: hydration_electrolytes_hyponatremia
+    name: "Hydratation, Sodium & Hyponatrémie (EAH)"
+    description: "Besoins hydriques individualisés, sudation, électrolytes et prévention de l'EAH."
+    weight: 1.15
+    keywords:
+      - hydration
+      - sodium
+      - electrolyte
+      - hyponatremia
+      - sweat
+      - fluid
+
+target_scopes:
+  all_levels:
+    - all levels
+    - general
+  recreational_amateur:
+    - recreational
+    - amateur
+  trained_competitive:
+    - trained
+    - competitive
+  elite_pro:
+    - elite
+    - professional

@@ -1,0 +1,35 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Build & Packaging
+build/
+dist/
+*.egg-info/
+
+# Environment & Secrets
+.env
+.env.local
+freebox_token.json
+
+# Runtime Data & SQLite (keep directory structure, ignore runtime DBs)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+logs/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+*.swp

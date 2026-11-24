@@ -1,0 +1,292 @@
+slug: trail_running_coaching
+name: "Coaching & Accompagnement d'Athlètes Tous Niveaux en Trail Running"
+description: >
+  Veille et audit scientifique multi-sources sur l'entraînement, l'accompagnement,
+  la physiologie, la biomécanique, la nutrition, la récupération, la psychologie
+  et la prévention des blessures en trail running, course en montagne et ultra-trail,
+  du coureur débutant/récréatif à l'athlète élite.
+domain: sports_science
+language: fr
+audit_start_year: 2015
+watch_lookback_days: 30
+max_results_per_source: 40
+min_relevance_score: 14.0
+
+queries:
+  - '("trail running" OR "ultra-trail" OR "ultratrail" OR "mountain running") AND (training OR coaching OR performance OR physiology OR pacing)'
+  - '("trail running" OR "ultra-endurance running" OR "ultramarathon") AND (nutrition OR hydration OR carbohydrate OR gastrointestinal)'
+  - '("trail running" OR "downhill running" OR "graded running") AND (biomechanics OR muscular damage OR fatigue OR poles OR economy)'
+  - '("trail running" OR "ultramarathon" OR "endurance running") AND (injury prevention OR recovery OR sleep OR heart rate variability OR training load)'
+  - '("trail runner" OR "trail runners" OR "ultra-marathon") AND (recreational OR amateur OR elite OR female OR master)'
+
+inclusion_keywords:
+  - trail running
+  - trail runner
+  - trail runners
+  - ultra-trail
+  - ultratrail
+  - ultramarathon
+  - ultra-marathon
+  - mountain running
+  - downhill running
+  - uphill running
+  - graded running
+  - skyrunning
+  - endurance running
+  - running economy
+  - training load
+  - periodization
+
+exclusion_keywords:
+  - mouse
+  - mice
+  - rat
+  - rats
+  - equine
+  - horse
+  - canine
+  - retracted
+  - corrigendum
+
+high_impact_journals:
+  - "Sports Medicine"
+  - "British Journal of Sports Medicine"
+  - "International Journal of Sports Physiology and Performance"
+  - "Journal of Applied Physiology"
+  - "Medicine & Science in Sports & Exercise"
+  - "Medicine and Science in Sports and Exercise"
+  - "European Journal of Sport Science"
+  - "Scandinavian Journal of Medicine & Science in Sports"
+  - "Journal of Sports Sciences"
+  - "Journal of Strength and Conditioning Research"
+  - "Frontiers in Physiology"
+  - "Frontiers in Sports and Active Living"
+  - "Journal of the International Society of Sports Nutrition"
+  - "Nutrients"
+  - "PLOS ONE"
+
+rss_feeds:
+  - name: "IJSPP (Human Kinetics)"
+    url: "https://journals.humankinetics.com/rss/showFeed?ui=0&mi=3fndc3&ai=s8&jc=ijspp&type=etoc&feed=rss"
+  - name: "Frontiers in Sports and Active Living"
+    url: "https://www.frontiersin.org/journals/sports-and-active-living/rss"
+
+themes:
+  - slug: periodization_training_load
+    name: "Périodisation, Charge d'Entraînement & Programmation"
+    description: "Distribution d'intensité (polarisé, pyramidal), quantification de la charge (TRIMP, RPE, D+), affûtage (tapering) et individualisation."
+    weight: 1.3
+    keywords:
+      - periodization
+      - training load
+      - training intensity distribution
+      - polarized
+      - pyramidal
+      - tapering
+      - coaching
+      - session rpe
+      - training volume
+      - block periodization
+      - high-intensity interval training
+      - hiit
+      - microcycle
+      - macrocycle
+      - prescription
+
+  - slug: physiology_energetics_durability
+    name: "Physiologie, Seuils, Énergétique & Durabilité"
+    description: "VO2max, seuils ventilatoires/lactiques, coût énergétique en pente, durabilité (résistance à la dérive sous fatigue prolongée) et zones d'intensité."
+    weight: 1.2
+    keywords:
+      - vo2max
+      - ventilatory threshold
+      - lactate threshold
+      - running economy
+      - energy cost
+      - durability
+      - physiological determinant
+      - aerobic capacity
+      - heart rate
+      - cardiorespiratory
+      - oxygen uptake
+      - metabolic
+      - decouple
+      - decoupling
+      - critical speed
+      - critical power
+
+  - slug: biomechanics_uphill_downhill_poles
+    name: "Biomécanique D+/D-, Casse Musculaire & Bâtons"
+    description: "Locomotion en montée et descente, travail excentrique, dommages neuromusculaires, usage des bâtons, foulée et chaussage."
+    weight: 1.25
+    keywords:
+      - downhill
+      - uphill
+      - graded
+      - slope
+      - gradient
+      - eccentric
+      - muscle damage
+      - neuromuscular fatigue
+      - poles
+      - walking
+      - running biomechanics
+      - stride
+      - kinematics
+      - Footwear
+      - shoe
+      - elevation gain
+      - vertical
+
+  - slug: nutrition_hydration_gi
+    name: "Nutrition, Hydratation, Gut Training & Troubles GI"
+    description: "Apports glucidiques (g/h), oxydation exogène, hydratation/sodium, troubles gastro-intestinaux en ultra et stratégies de ravitaillement."
+    weight: 1.25
+    keywords:
+      - nutrition
+      - carbohydrate
+      - hydration
+      - sodium
+      - hyponatremia
+      - gastrointestinal
+      - gut
+      - fueling
+      - energy intake
+      - supplementation
+      - caffeine
+      - ketogenic
+      - fat oxidation
+      - dehydration
+      - hydrogel
+
+  - slug: injury_prevention_recovery_sleep
+    name: "Prévention des Blessures, Récupération, Sommeil & VFC"
+    description: "Épidémiologie des blessures en trail, récupération post-course, sommeil, variabilité de la fréquence cardiaque (HRV/VFC), surentraînement et RED-S."
+    weight: 1.2
+    keywords:
+      - injury
+      - injuries
+      - recovery
+      - sleep
+      - hrv
+      - heart rate variability
+      - overtraining
+      - overreaching
+      - red-s
+      - energy availability
+      - bone
+      - tendinopathy
+      - soreness
+      - doms
+      - inflammation
+      - biomarker
+
+  - slug: psychology_pacing_cognition
+    name: "Psychologie, Pacing, Gestion de l'Effort & Fatigue Mentale"
+    description: "Stratégies d'allure (pacing) selon le profil de course, motivation, résilience, fatigue mentale, prise de décision et privation de sommeil."
+    weight: 1.15
+    keywords:
+      - pacing
+      - pace
+      - psychological
+      - psychology
+      - mental fatigue
+      - motivation
+      - cognitive
+      - sleep deprivation
+      - perceived exertion
+      - rpe
+      - pain
+      - resilience
+      - self-efficacy
+      - anxiety
+      - emotion
+
+  - slug: athlete_populations_levels_female_master
+    name: "Profils d'Athlètes : Débutants, Amateurs, Femmes & Masters"
+    description: "Différences selon le niveau d'expertise (débutant à élite), spécificités physiologiques/hormonales féminines et vieillissement (athlètes Masters)."
+    weight: 1.25
+    keywords:
+      - recreational
+      - amateur
+      - novice
+      - beginner
+      - female
+      - women
+      - sex difference
+      - menstrual
+      - master
+      - aging
+      - age-related
+      - youth
+      - performance level
+      - all levels
+      - sub-elite
+
+  - slug: environment_altitude_heat_cold
+    name: "Environnement : Altitude, Chaleur, Froid & Thermorégulation"
+    description: "Acclimatation à la chaleur, hypoxie/altitude, gestion du froid et contraintes environnementales en montagne."
+    weight: 1.1
+    keywords:
+      - altitude
+      - hypoxia
+      - hypoxic
+      - heat
+      - thermal
+      - thermoregulation
+      - cold
+      - acclimation
+      - acclimatization
+      - environmental
+      - weather
+
+target_scopes:
+  all_levels:
+    - all levels
+    - heterogeneous
+    - general
+    - broad range
+    - various levels
+    - recreational and elite
+  recreational_amateur:
+    - recreational
+    - amateur
+    - novice
+    - beginner
+    - non-elite
+    - sub-elite
+    - hobby
+    - community
+  trained_competitive:
+    - well-trained
+    - trained
+    - competitive
+    - experienced
+    - regional
+    - national
+  elite_pro:
+    - elite
+    - world-class
+    - professional
+    - international
+    - high-level
+    - top-level
+  female_athlete:
+    - female
+    - women
+    - menstrual
+    - sex difference
+    - gender
+  master_athlete:
+    - master
+    - masters
+    - veteran
+    - older
+    - aging
+
+llm_system_prompt: >
+  Tu es un directeur de performance et chercheur spécialisé en trail running et sports d'endurance (myKairn Coach).
+  Pour chaque publication scientifique, rédige une synthèse rigoureuse en français orientée terrain :
+  1) Résumé clair de l'étude (population, protocole, résultats chiffrés),
+  2) Application concrète ("Takeaway Coaching") pour l'accompagnement d'athlètes (en précisant à quel niveau d'athlète cela s'applique : débutant, amateur, compétiteur ou élite),
+  3) Limites méthodologiques à garder en tête.

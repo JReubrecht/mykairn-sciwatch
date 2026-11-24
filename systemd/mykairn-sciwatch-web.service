@@ -1,0 +1,18 @@
+[Unit]
+Description=myKairn SciWatch — Dashboard Web & API REST de Veille Scientifique 6D
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=freebox
+WorkingDirectory=/opt/mykairn-sciwatch
+Environment="PYTHONPATH=/opt/mykairn-sciwatch/src"
+Environment="SCIWATCH_HOST=0.0.0.0"
+Environment="SCIWATCH_PORT=8095"
+ExecStart=/usr/bin/python3 -u -m mykairn_sciwatch serve --host 0.0.0.0 --port 8095
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

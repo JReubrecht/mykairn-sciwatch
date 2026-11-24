@@ -1,0 +1,11 @@
+[Unit]
+Description=Planificateur Hebdomadaire & Quotidien de Veille Scientifique myKairn SciWatch
+
+[Timer]
+OnCalendar=Mon,Thu *-*-* 06:30:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=mykairn-sciwatch-watch.service
+
+[Install]
+WantedBy=timers.target

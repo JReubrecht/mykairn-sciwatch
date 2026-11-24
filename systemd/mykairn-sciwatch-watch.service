@@ -1,0 +1,11 @@
+[Unit]
+Description=myKairn SciWatch — Exécution Automatique de la Veille Scientifique Incrémentale
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=freebox
+WorkingDirectory=/opt/mykairn-sciwatch
+Environment="PYTHONPATH=/opt/mykairn-sciwatch/src"
+ExecStart=/usr/bin/python3 -u -m mykairn_sciwatch watch --profile trail_running_coaching --days 14 --notify

@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mykairn-sciwatch"
+version = "1.0.0"
+description = "Moteur modulaire d'audit et de veille scientifique automatisée (PubMed, OpenAlex, Semantic Scholar, Crossref/RSS) avec classification 6D (EBM, Thème, Qualité, Portée terrain, Fraîcheur, Takeaways) et Dashboard Web."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Jérôme Reubrecht", email = "contact@mykairn.fr" }
+]
+keywords = [
+    "scientific-watch",
+    "pubmed",
+    "openalex",
+    "semantic-scholar",
+    "trail-running",
+    "sports-science",
+    "evidence-based-coaching",
+    "literature-review"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+sciwatch = "mykairn_sciwatch.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

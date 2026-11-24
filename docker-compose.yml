@@ -1,0 +1,13 @@
+services:
+  sciwatch-web:
+    build: .
+    container_name: mykairn-sciwatch
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./profiles:/app/profiles
