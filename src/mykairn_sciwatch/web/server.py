@@ -15,10 +15,12 @@ from typing import Any, Dict, List, Optional
 
 _VALID_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _RUN_LOCK = threading.Lock()
-_MAX_POST_BYTES = 65_536
+_MAX_POST_BYTES = 524_288
 _PROXY_HEADERS = ("CF-Connecting-IP", "CF-Ray", "X-Forwarded-For", "X-Forwarded-Host", "Forwarded")
 
 from mykairn_sciwatch.config import AppConfig, list_topic_profiles, resolve_profile, save_topic_profile
+from mykairn_sciwatch.connectors.aggregator import deduplicate_publications
+from mykairn_sciwatch.connectors.pedro import parse_pedro_ris
 from mykairn_sciwatch.pipeline import SciWatchPipeline
 from mykairn_sciwatch.profile_generator import generate_topic_profile
 from mykairn_sciwatch.reporting.exporters import (
@@ -407,6 +409,12 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                     replace_kwargs["min_quality_score"] = max(0.0, float(body["min_quality_score"]))
                 if "min_relevance_score" in body and body.get("min_relevance_score") is not None:
                     replace_kwargs["min_relevance_score"] = max(0.0, float(body["min_relevance_score"]))
+                if "pedro_subdiscipline" in body:
+                    replace_kwargs["pedro_subdiscipline"] = str(body.get("pedro_subdiscipline") or "").strip()
+                if "pedro_therapy" in body:
+                    replace_kwargs["pedro_therapy"] = str(body.get("pedro_therapy") or "").strip()
+                if "pedro_min_score" in body and body.get("pedro_min_score") is not None:
+                    replace_kwargs["pedro_min_score"] = max(0, min(10, int(body["pedro_min_score"])))
 
                 effective_profile = dc_replace(base_profile, **replace_kwargs) if replace_kwargs else base_profile
                 if _parse_bool_flag(body.get("persist_overrides"), False) and replace_kwargs:
@@ -494,6 +502,9 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                     min_relevance_score=float(body.get("min_relevance_score", 10.0) or 10.0),
                     min_quality_score=float(body.get("min_quality_score", 0.0) or 0.0),
                     max_results_per_source=int(body.get("max_results_per_source", 30) or 30),
+                    pedro_subdiscipline=str(body.get("pedro_subdiscipline", "") or "").strip(),
+                    pedro_therapy=str(body.get("pedro_therapy", "") or "").strip(),
+                    pedro_min_score=max(0, min(10, int(body.get("pedro_min_score", 0) or 0))),
                     slug_override=slug_override,
                 )
             except ValueError as err:
@@ -509,6 +520,58 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                 },
                 status=201,
             )
+            return
+
+        if path == "/api/import-ris":
+            topic = self._validate_slug_param(str(body.get("topic", "trail_running_coaching")))
+            if not topic or topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
+            ris_text = str(body.get("ris_text", "") or "")
+            if not ris_text.strip():
+                self._send_json({"error": "Contenu RIS vide."}, status=400)
+                return
+            try:
+                profile = resolve_profile(topic, self.pipeline.config.profiles_dir)
+                raw_items = parse_pedro_ris(ris_text)
+                if not raw_items:
+                    self._send_json({"error": "Aucune notice valide détectée dans ce fichier RIS."}, status=400)
+                    return
+                merged = deduplicate_publications(raw_items)
+                # Pour l'import manuel explicite depuis PEDro, on relâche les filtres d'exclusion de collecte auto
+                profile_relaxed = dc_replace(
+                    profile,
+                    strict_boolean=False,
+                    min_relevance_score=0.0,
+                    pedro_min_score=0,
+                    open_access_only=False,
+                    humans_only=False,
+                    min_citations=0,
+                    min_sample_size=0,
+                    min_quality_score=0.0,
+                    allowed_publication_types=[],
+                )
+                classified = self.pipeline.classifier.classify_batch(
+                    records=merged,
+                    profile=profile_relaxed,
+                    max_llm_calls=5,
+                )
+                inserted, updated = self.pipeline.store.upsert_publications(classified)
+                self._send_json(
+                    {
+                        "status": "imported",
+                        "topic": topic,
+                        "parsed_count": len(raw_items),
+                        "classified_count": len(classified),
+                        "inserted": inserted,
+                        "updated": updated,
+                    },
+                    status=200,
+                )
+            except FileNotFoundError:
+                self._send_json({"error": f"Sujet '{topic}' introuvable."}, status=404)
+            except Exception as err:
+                self._send_json({"error": f"Échec import RIS : {err}"}, status=500)
             return
 
         self._send_json({"error": "Not found"}, status=404)
@@ -647,6 +710,9 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             min_citations=max(0, int(body.get("min_citations", existing.min_citations) or 0)),
             min_sample_size=max(0, int(body.get("min_sample_size", existing.min_sample_size) or 0)),
             min_quality_score=max(0.0, float(body.get("min_quality_score", existing.min_quality_score) or 0.0)),
+            pedro_subdiscipline=str(body.get("pedro_subdiscipline", existing.pedro_subdiscipline) or "").strip(),
+            pedro_therapy=str(body.get("pedro_therapy", existing.pedro_therapy) or "").strip(),
+            pedro_min_score=max(0, min(10, int(body.get("pedro_min_score", existing.pedro_min_score) or 0))),
         )
         saved_path = save_topic_profile(updated, self.pipeline.config.profiles_dir)
         self._send_json(

@@ -20,13 +20,16 @@ from mykairn_sciwatch.models import RawPublication
 from mykairn_sciwatch.profile_generator import generate_topic_profile
 from mykairn_sciwatch.search_syntax import (
     build_boolean_from_blocks,
+    build_pedro_advanced_search_url,
     compile_for_crossref,
     compile_for_openalex,
+    compile_for_pedro_pubmed,
     compile_for_pubmed,
     compile_for_semantic_scholar_bulk,
     matches_boolean_query,
     validate_boolean_query,
 )
+from mykairn_sciwatch.connectors.pedro import parse_pedro_ris
 from mykairn_sciwatch.storage.sqlite_store import SciWatchStore
 from mykairn_sciwatch.web.server import create_http_server
 
@@ -274,9 +277,84 @@ class TestSearchSyntaxAndParams(unittest.TestCase):
                 with urllib.request.urlopen(req_pubs, timeout=5) as resp:
                     pub_payload = json.loads(resp.read().decode("utf-8"))
                     self.assertTrue(pub_payload.get("boolean_engine"))
+
+                # 5. POST /api/import-ris (PEDro RIS import + 8/10 PEDro score)
+                sample_ris = """TY  - JOUR
+TI  - Effectiveness of online tailored advice to prevent running-related injuries in trail runners
+AU  - Hespanhol LC
+AU  - Verhagen E
+JO  - British Journal of Sports Medicine
+PY  - 2018
+DO  - 10.1136/bjsports-2016-097025
+UR  - https://search.pedro.org.au/search-results/record-detail/50908
+N1  - PEDro Score: 8/10. Random allocation: Yes. Concealed allocation: Yes.
+AB  - Randomised controlled trial evaluating n = 232 trail runners for injury prevention.
+KW  - sports
+KW  - clinical trial
+ER  -
+"""
+                req_ris = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/import-ris",
+                    data=json.dumps({"topic": created["slug"], "ris_text": sample_ris}).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-SciWatch-Secret": cfg.api_secret,
+                        "X-SciWatch-Role": "admin",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req_ris, timeout=5) as resp:
+                    self.assertEqual(resp.status, 200)
+                    ris_payload = json.loads(resp.read().decode("utf-8"))
+                    self.assertEqual(ris_payload["parsed_count"], 1)
+                    self.assertEqual(ris_payload["classified_count"], 1)
+                    self.assertEqual(ris_payload["inserted"], 1)
+
+                req_imported = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/publications?topic={created['slug']}&source=pedro",
+                    headers={"X-SciWatch-Secret": cfg.api_secret, "X-SciWatch-Role": "reader"},
+                )
+                with urllib.request.urlopen(req_imported, timeout=5) as resp:
+                    imp_data = json.loads(resp.read().decode("utf-8"))
+                    self.assertEqual(imp_data["count"], 1)
+                    self.assertEqual(imp_data["publications"][0]["quality_breakdown"].get("pedro_score"), 8.0)
             finally:
                 server.shutdown()
                 server.server_close()
+
+    def test_pedro_url_compiler_and_ris_parser(self) -> None:
+        pedro_url = build_pedro_advanced_search_url(
+            '("trail running" OR eccentric) AND ti:injury NOT mice',
+            start_year=2018,
+            subdiscipline="sports",
+            therapy="strength_training",
+            min_pedro_score=7,
+            allowed_pub_types=["randomized_controlled_trial"],
+        )
+        self.assertTrue(pedro_url.startswith("https://search.pedro.org.au/advanced-search/results?"))
+        self.assertIn("subdiscipline=VL01361", pedro_url)
+        self.assertIn("therapy=VL01387", pedro_url)
+        self.assertIn("nscore=7", pedro_url)
+        self.assertIn("title=injury", pedro_url)
+        self.assertNotIn("mice", pedro_url)
+
+        pm_pedro = compile_for_pedro_pubmed(
+            "tendinopathy AND eccentric",
+            subdiscipline="sports",
+            therapy="strength_training",
+        )
+        self.assertIn("Physical Therapy Modalities", pm_pedro)
+        self.assertIn("Randomized Controlled Trial", pm_pedro)
+        self.assertIn("Resistance Training", pm_pedro)
+
+        ris_items = parse_pedro_ris(
+            "TY  - JOUR\nTI  - Eccentric loading for Achilles tendinopathy\n"
+            "AU  - Alfredson H\nPY  - 2021\nN1  - Score: 7/10\n"
+            "UR  - https://search.pedro.org.au/search-results/record-detail/12345\nER  -\n"
+        )
+        self.assertEqual(len(ris_items), 1)
+        self.assertEqual(ris_items[0].source, "pedro")
+        self.assertEqual(ris_items[0].pedro_score, 7)
 
 
 if __name__ == "__main__":

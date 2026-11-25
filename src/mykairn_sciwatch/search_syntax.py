@@ -15,6 +15,7 @@ Supporte :
 from __future__ import annotations
 
 import re
+import urllib.parse
 from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -95,6 +96,93 @@ LANGUAGE_PUBMED_MAP: Dict[str, str] = {
     "de": '"german"[Language]',
     "it": '"italian"[Language]',
     "pt": '"portuguese"[Language]',
+}
+
+# Taxonomie officielle PEDro (search.pedro.org.au/advanced-search)
+PEDRO_SUBDISCIPLINES: Dict[str, Dict[str, str]] = {
+    "sports": {
+        "code": "VL01361",
+        "label": "Sports",
+        "pubmed": '("Sports Medicine"[MeSH Terms] OR "Athletic Injuries"[MeSH Terms] OR sport*[Title/Abstract] OR athlete*[Title/Abstract])',
+    },
+    "musculoskeletal": {
+        "code": "VL01356",
+        "label": "Musculo-squelettique",
+        "pubmed": '("Musculoskeletal Diseases"[MeSH Terms] OR musculoskeletal[Title/Abstract] OR tendon[Title/Abstract] OR ligament[Title/Abstract])',
+    },
+    "orthopaedics": {
+        "code": "VL01359",
+        "label": "Orthopédie",
+        "pubmed": '("Orthopedics"[MeSH Terms] OR orthopedic*[Title/Abstract] OR orthopaedic*[Title/Abstract])',
+    },
+    "cardiothoracics": {
+        "code": "VL01352",
+        "label": "Cardio-respiratoire",
+        "pubmed": '("Cardiopulmonary"[Title/Abstract] OR respiratory[Title/Abstract] OR "cardiac rehabilitation"[Title/Abstract])',
+    },
+    "neurology": {
+        "code": "VL01357",
+        "label": "Neurologie",
+        "pubmed": '("Neurology"[MeSH Terms] OR neurological[Title/Abstract] OR neuromuscular[Title/Abstract])',
+    },
+    "gerontology": {
+        "code": "VL01355",
+        "label": "Gérontologie",
+        "pubmed": '("Aged"[MeSH Terms] OR "older adult*"[Title/Abstract] OR geriatric*[Title/Abstract])',
+    },
+    "paediatrics": {
+        "code": "VL01360",
+        "label": "Pédiatrie",
+        "pubmed": '("Pediatrics"[MeSH Terms] OR pediatric*[Title/Abstract] OR youth[Title/Abstract] OR adolescent*[Title/Abstract])',
+    },
+    "ergonomics": {
+        "code": "VL01354",
+        "label": "Ergonomie & Santé au travail",
+        "pubmed": '("Ergonomics"[MeSH Terms] OR occupational[Title/Abstract])',
+    },
+    "continence": {
+        "code": "VL01353",
+        "label": "Santé féminine / Pelvienne",
+        "pubmed": '("Women"[MeSH Terms] OR "pelvic floor"[Title/Abstract] OR incontinence[Title/Abstract])',
+    },
+}
+
+PEDRO_THERAPIES: Dict[str, Dict[str, str]] = {
+    "strength_training": {
+        "code": "VL01387",
+        "label": "Renforcement musculaire",
+        "pubmed": '("Resistance Training"[MeSH Terms] OR "strength training"[Title/Abstract] OR eccentric[Title/Abstract] OR isometric[Title/Abstract])',
+    },
+    "fitness_training": {
+        "code": "VL01380",
+        "label": "Entraînement physique / Fitness",
+        "pubmed": '("Exercise Therapy"[MeSH Terms] OR "aerobic training"[Title/Abstract] OR endurance[Title/Abstract] OR conditioning[Title/Abstract])',
+    },
+    "stretching_mobilisation_massage": {
+        "code": "VL01388",
+        "label": "Étirements, mobilisation & massage",
+        "pubmed": '("Musculoskeletal Manipulations"[MeSH Terms] OR stretching[Title/Abstract] OR mobilisation[Title/Abstract] OR mobilization[Title/Abstract] OR massage[Title/Abstract])',
+    },
+    "orthoses_taping_splinting": {
+        "code": "VL01384",
+        "label": "Orthèses, taping & contention",
+        "pubmed": '("Orthotic Devices"[MeSH Terms] OR orthos*[Title/Abstract] OR taping[Title/Abstract] OR insole*[Title/Abstract] OR compression[Title/Abstract])',
+    },
+    "electrotherapies_heat_cold": {
+        "code": "VL01379",
+        "label": "Électrothérapie, chaud & cryothérapie",
+        "pubmed": '("Cryotherapy"[MeSH Terms] OR "Electric Stimulation Therapy"[MeSH Terms] OR cryotherapy[Title/Abstract] OR cold[Title/Abstract] OR heat[Title/Abstract] OR ultrasound[Title/Abstract])',
+    },
+    "skill_training": {
+        "code": "VL01386",
+        "label": "Entraînement moteur & technique",
+        "pubmed": '(propriocept*[Title/Abstract] OR balance[Title/Abstract] OR gait[Title/Abstract] OR neuromuscular[Title/Abstract])',
+    },
+    "education": {
+        "code": "VL01378",
+        "label": "Éducation & prévention patient",
+        "pubmed": '("Patient Education as Topic"[MeSH Terms] OR education[Title/Abstract] OR advice[Title/Abstract])',
+    },
 }
 
 
@@ -740,6 +828,142 @@ def compile_for_crossref(query: str) -> Dict[str, str]:
     if journal_terms:
         out["container_title"] = " ".join(dict.fromkeys(journal_terms))[:120]
     return out
+
+
+def compile_for_pedro_pubmed(
+    query: str,
+    *,
+    subdiscipline: str = "",
+    therapy: str = "",
+    humans_only: bool = True,
+    open_access_only: bool = False,
+    languages: Optional[List[str]] = None,
+) -> str:
+    """
+    Compile une requête booléenne pour le périmètre PEDro (Physiotherapy Evidence Database)
+    sur PubMed Entrez : essais cliniques randomisés / revues systématiques / guides + MeSH Physiothérapie.
+    """
+    pedro_methods = (
+        '("Randomized Controlled Trial"[Publication Type] OR '
+        '"Controlled Clinical Trial"[Publication Type] OR '
+        '"Systematic Review"[Publication Type] OR '
+        '"Meta-Analysis"[Publication Type] OR '
+        '"Practice Guideline"[Publication Type] OR '
+        '"Guideline"[Publication Type])'
+    )
+    pedro_scope = (
+        '("Physical Therapy Modalities"[MeSH Terms] OR '
+        '"Rehabilitation"[MeSH Terms] OR '
+        '"Exercise Therapy"[MeSH Terms] OR '
+        '"Musculoskeletal Manipulations"[MeSH Terms] OR '
+        '"Athletic Injuries"[MeSH Terms] OR '
+        '"Recovery of Function"[MeSH Terms] OR '
+        'physiotherap*[Title/Abstract] OR '
+        '"physical therapy"[Title/Abstract] OR '
+        'rehabilitat*[Title/Abstract] OR '
+        '"exercise therapy"[Title/Abstract] OR '
+        '"injury prevention"[Title/Abstract] OR '
+        'tendinopath*[Title/Abstract] OR '
+        'eccentric[Title/Abstract] OR '
+        'neuromuscular[Title/Abstract])'
+    )
+
+    base = compile_for_pubmed(
+        query,
+        humans_only=humans_only,
+        open_access_only=open_access_only,
+        exclude_preprints=True,
+        languages=languages,
+    )
+    parts = [f"({base})" if base else "", pedro_methods, pedro_scope]
+    if subdiscipline and subdiscipline in PEDRO_SUBDISCIPLINES:
+        parts.append(PEDRO_SUBDISCIPLINES[subdiscipline]["pubmed"])
+    if therapy and therapy in PEDRO_THERAPIES:
+        parts.append(PEDRO_THERAPIES[therapy]["pubmed"])
+    return " AND ".join(p for p in parts if p)
+
+
+def build_pedro_advanced_search_url(
+    query: str,
+    *,
+    start_year: Optional[int] = None,
+    subdiscipline: str = "",
+    therapy: str = "",
+    min_pedro_score: int = 0,
+    allowed_pub_types: Optional[List[str]] = None,
+    per_page: int = 20,
+) -> str:
+    """
+    Génère l'URL GET officielle vers `https://search.pedro.org.au/advanced-search/results`.
+    Respecte la validation stricte de PEDro : ASCII uniquement, pas d'opérateurs AND/OR/NOT ni parenthèses
+    dans les champs texte, champ dédié `title` / `authors_association` / `source`, et codes VL013xx.
+    """
+    raw = (query or "").strip()
+    abs_title_terms: List[str] = []
+    title_terms: List[str] = []
+    author_terms: List[str] = []
+    source_terms: List[str] = []
+    lop = "and"
+
+    try:
+        ast = parse_boolean_query(raw)
+        if ast is not None:
+            if isinstance(ast, OrNode):
+                lop = "or"
+            pos, _ = _collect_terms(ast)
+            for t in pos:
+                ascii_val = re.sub(r"[^\x20-\x7E]", " ", t.value).strip()
+                ascii_val = re.sub(r"\b(and|or|not)\b", " ", ascii_val, flags=re.IGNORECASE)
+                ascii_val = " ".join(ascii_val.split())
+                if len(ascii_val) < 3:
+                    continue
+                token = f"{ascii_val}*" if t.wildcard and not ascii_val.endswith("*") else ascii_val
+                if t.field == "ti":
+                    title_terms.append(token)
+                elif t.field == "au":
+                    author_terms.append(token)
+                elif t.field == "jo":
+                    source_terms.append(token)
+                else:
+                    abs_title_terms.append(token)
+    except BooleanSyntaxError:
+        cleaned = re.sub(r"[^\x20-\x7E]", " ", compile_for_semantic_scholar_basic(raw))
+        cleaned = " ".join(cleaned.split())
+        if len(cleaned) >= 3:
+            abs_title_terms.append(cleaned)
+
+    params: Dict[str, str] = {
+        "perpage": str(per_page if per_page in (5, 10, 20, 30, 50) else 20),
+        "lop": lop,
+        "find": "Start Search",
+    }
+    if abs_title_terms:
+        params["abstract_with_title"] = " ".join(dict.fromkeys(abs_title_terms))[:140]
+    if title_terms:
+        params["title"] = " ".join(dict.fromkeys(title_terms))[:100]
+    if author_terms:
+        params["authors_association"] = " ".join(dict.fromkeys(author_terms))[:100]
+    if source_terms:
+        params["source"] = " ".join(dict.fromkeys(source_terms))[:100]
+    if start_year and 1900 <= start_year <= 3000:
+        params["year_of_publication"] = str(start_year)
+    if subdiscipline and subdiscipline in PEDRO_SUBDISCIPLINES:
+        params["subdiscipline"] = PEDRO_SUBDISCIPLINES[subdiscipline]["code"]
+    if therapy and therapy in PEDRO_THERAPIES:
+        params["therapy"] = PEDRO_THERAPIES[therapy]["code"]
+    if min_pedro_score and 1 <= min_pedro_score <= 10:
+        params["nscore"] = str(min_pedro_score)
+
+    if allowed_pub_types:
+        pt_set = set(allowed_pub_types)
+        if pt_set.issubset({"systematic_review", "meta_analysis"}):
+            params["method"] = "systematic review"
+        elif pt_set == {"consensus_statement"}:
+            params["method"] = "practice guideline"
+        elif pt_set.issubset({"randomized_controlled_trial", "controlled_trial"}):
+            params["method"] = "clinical trial"
+
+    return f"https://search.pedro.org.au/advanced-search/results?{urllib.parse.urlencode(params)}"
 
 
 # ==============================================================================

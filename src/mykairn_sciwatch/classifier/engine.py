@@ -124,6 +124,10 @@ class ScientificClassifier6D:
         if min_cit > 0 and raw.citation_count < min_cit:
             return None
 
+        min_pedro = int(getattr(profile, "pedro_min_score", 0) or 0)
+        if min_pedro > 0 and raw.pedro_score is not None and raw.pedro_score < min_pedro:
+            return None
+
         if getattr(profile, "humans_only", False) and self._is_animal_or_invitro_only(full_text_lower):
             return None
 
@@ -597,6 +601,13 @@ class ScientificClassifier6D:
                 rigor_pts += bonus
         if len(raw.abstract) > 600:
             rigor_pts += 1.0
+        if raw.pedro_score is not None:
+            if raw.pedro_score >= 8:
+                rigor_pts = max(rigor_pts, 11.5)
+            elif raw.pedro_score >= 6:
+                rigor_pts = max(rigor_pts, 9.5)
+            elif raw.pedro_score >= 4:
+                rigor_pts = max(rigor_pts, 7.0)
         rigor_pts = min(12.0, rigor_pts)
 
         total = round(min(100.0, ebm_pts + sample_pts + journal_pts + cit_pts + rigor_pts), 1)
@@ -619,6 +630,8 @@ class ScientificClassifier6D:
             "citation_impact": round(cit_pts, 1),
             "methodological_rigor": round(rigor_pts, 1),
         }
+        if raw.pedro_score is not None:
+            breakdown["pedro_score"] = float(raw.pedro_score)
         return total, grade, breakdown
 
     @staticmethod

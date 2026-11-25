@@ -1073,6 +1073,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="openalex" checked style="width:auto;" /> OpenAlex</label>
         <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="semantic_scholar" checked style="width:auto;" /> Semantic Scholar</label>
         <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="crossref" checked style="width:auto;" /> Crossref</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="pedro" checked style="width:auto;" /> PEDro (Physio)</label>
       </div>
       <div class="form-row" style="display:flex;flex-wrap:wrap;gap:12px;">
         <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="newTopicHumans" style="width:auto;" /> Humains uniquement</label>

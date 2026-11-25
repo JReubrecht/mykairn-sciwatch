@@ -69,6 +69,9 @@ def generate_topic_profile(
     min_relevance_score: float = 10.0,
     min_quality_score: float = 0.0,
     max_results_per_source: int = 30,
+    pedro_subdiscipline: str = "",
+    pedro_therapy: str = "",
+    pedro_min_score: int = 0,
     slug_override: Optional[str] = None,
 ) -> TopicProfile:
     """
@@ -201,7 +204,7 @@ def generate_topic_profile(
     clean_sources = (
         [s.strip() for s in enabled_sources if str(s).strip()]
         if enabled_sources
-        else ["pubmed", "openalex", "semantic_scholar", "crossref"]
+        else ["pubmed", "openalex", "semantic_scholar", "crossref", "pedro"]
     )
     clean_journals = (
         [str(j).strip() for j in high_impact_journals if str(j).strip()]
@@ -241,6 +244,9 @@ def generate_topic_profile(
         min_citations=max(0, int(min_citations)),
         min_sample_size=max(0, int(min_sample_size)),
         min_quality_score=max(0.0, float(min_quality_score)),
+        pedro_subdiscipline=str(pedro_subdiscipline or "").strip(),
+        pedro_therapy=str(pedro_therapy or "").strip(),
+        pedro_min_score=max(0, min(10, int(pedro_min_score or 0))),
         llm_system_prompt=(
             f"Tu es un directeur scientifique expert chargé d'auditer la littérature sur '{name}'. "
             "Synthétise chaque publication en français avec un regard critique sur la qualité méthodologique (EBM) "

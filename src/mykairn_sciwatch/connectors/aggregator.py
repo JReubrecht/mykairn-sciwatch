@@ -13,6 +13,7 @@ from mykairn_sciwatch.config import AppConfig
 from mykairn_sciwatch.connectors.base import normalize_doi, normalize_title_key
 from mykairn_sciwatch.connectors.crossref_rss import CrossrefRssConnector
 from mykairn_sciwatch.connectors.openalex import OpenAlexConnector
+from mykairn_sciwatch.connectors.pedro import PedroConnector
 from mykairn_sciwatch.connectors.pubmed import PubMedConnector
 from mykairn_sciwatch.connectors.semantic_scholar import SemanticScholarConnector
 from mykairn_sciwatch.models import RawPublication, TopicProfile
@@ -68,6 +69,9 @@ def _merge_into(target: MergedPublicationRecord, incoming: RawPublication) -> No
         base.citation_count = incoming.citation_count
     if incoming.influential_citation_count > base.influential_citation_count:
         base.influential_citation_count = incoming.influential_citation_count
+    if incoming.pedro_score is not None:
+        if base.pedro_score is None or incoming.pedro_score > base.pedro_score:
+            base.pedro_score = incoming.pedro_score
 
     # Union des types de publication, MeSH et concepts
     base.raw_publication_types = list(
@@ -137,6 +141,7 @@ class MultiSourceAggregator:
         self.openalex = OpenAlexConnector(email=config.openalex_email)
         self.s2 = SemanticScholarConnector(api_key=config.s2_api_key)
         self.crossref = CrossrefRssConnector(email=config.openalex_email)
+        self.pedro = PedroConnector(ncbi_api_key=config.ncbi_api_key, email=config.ncbi_email)
 
     def collect_for_profile(
         self,
@@ -154,7 +159,7 @@ class MultiSourceAggregator:
         sources = set(
             enabled_sources
             or profile.enabled_sources
-            or ["pubmed", "openalex", "semantic_scholar", "crossref", "rss"]
+            or ["pubmed", "openalex", "semantic_scholar", "crossref", "pedro", "rss"]
         )
         limit = max_per_source or profile.max_results_per_source
         days = lookback_days if mode == "watch" else None
@@ -269,6 +274,27 @@ class MultiSourceAggregator:
                     )
                     all_raw.extend(cr_items)
                     counts["crossref"] = counts.get("crossref", 0) + len(cr_items)
+                except Exception:
+                    pass
+
+            # 5. PEDro (Physiotherapy Evidence Database scope)
+            if "pedro" in sources:
+                try:
+                    pedro_items = self.pedro.search_pedro(
+                        query=query,
+                        max_results=max(6, per_query_limit // 2),
+                        start_year=profile.audit_start_year,
+                        end_year=end_year,
+                        lookback_days=days,
+                        subdiscipline=str(getattr(profile, "pedro_subdiscipline", "") or ""),
+                        therapy=str(getattr(profile, "pedro_therapy", "") or ""),
+                        min_pedro_score=int(getattr(profile, "pedro_min_score", 0) or 0),
+                        humans_only=humans_only,
+                        open_access_only=open_access_only,
+                        languages=search_languages,
+                    )
+                    all_raw.extend(pedro_items)
+                    counts["pedro"] = counts.get("pedro", 0) + len(pedro_items)
                 except Exception:
                     pass
 

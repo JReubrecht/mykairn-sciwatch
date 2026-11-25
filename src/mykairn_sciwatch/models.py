@@ -129,7 +129,7 @@ class TopicProfile:
     max_results_per_source: int = 40
     min_relevance_score: float = 15.0
     enabled_sources: List[str] = field(
-        default_factory=lambda: ["pubmed", "openalex", "semantic_scholar", "crossref"]
+        default_factory=lambda: ["pubmed", "openalex", "semantic_scholar", "crossref", "pedro"]
     )
     allowed_publication_types: List[str] = field(default_factory=list)
     humans_only: bool = False
@@ -140,6 +140,9 @@ class TopicProfile:
     min_citations: int = 0
     min_sample_size: int = 0
     min_quality_score: float = 0.0
+    pedro_subdiscipline: str = ""
+    pedro_therapy: str = ""
+    pedro_min_score: int = 0
     llm_system_prompt: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -148,7 +151,7 @@ class TopicProfile:
 
 @dataclass
 class RawPublication:
-    """Publication brute collectée depuis un connecteur (PubMed, OpenAlex, Semantic Scholar, Crossref/RSS)."""
+    """Publication brute collectée depuis un connecteur (PubMed, OpenAlex, Semantic Scholar, Crossref/RSS, PEDro)."""
 
     source: str
     external_id: str
@@ -168,6 +171,7 @@ class RawPublication:
     mesh_terms: List[str] = field(default_factory=list)
     concepts: List[str] = field(default_factory=list)
     is_open_access: bool = False
+    pedro_score: Optional[int] = None
     query_matched: str = ""
 
 

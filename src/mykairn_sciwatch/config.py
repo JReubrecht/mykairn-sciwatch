@@ -111,7 +111,7 @@ def parse_profile_dict(data: Dict[str, Any]) -> TopicProfile:
     enabled_sources = (
         [str(s).strip() for s in raw_sources if str(s).strip()]
         if isinstance(raw_sources, list) and raw_sources
-        else ["pubmed", "openalex", "semantic_scholar", "crossref"]
+        else ["pubmed", "openalex", "semantic_scholar", "crossref", "pedro"]
     )
     raw_blocks = data.get("query_blocks")
     query_blocks = [dict(b) for b in raw_blocks if isinstance(b, dict)] if isinstance(raw_blocks, list) else []
@@ -157,6 +157,9 @@ def parse_profile_dict(data: Dict[str, Any]) -> TopicProfile:
         min_citations=int(data.get("min_citations", 0) or 0),
         min_sample_size=int(data.get("min_sample_size", 0) or 0),
         min_quality_score=float(data.get("min_quality_score", 0.0) or 0.0),
+        pedro_subdiscipline=str(data.get("pedro_subdiscipline", "") or ""),
+        pedro_therapy=str(data.get("pedro_therapy", "") or ""),
+        pedro_min_score=int(data.get("pedro_min_score", 0) or 0),
         llm_system_prompt=str(data.get("llm_system_prompt", "")),
     )
 

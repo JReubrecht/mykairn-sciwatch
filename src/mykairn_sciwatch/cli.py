@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--sources",
         "-s",
         default=None,
-        help="Sources séparées par des virgules (pubmed,openalex,semantic_scholar,crossref,rss)",
+        help="Sources séparées par des virgules (pubmed,openalex,semantic_scholar,crossref,pedro,rss)",
     )
     p_audit.add_argument("--notify", action="store_true", help="Envoyer le digest email / webhook")
 
