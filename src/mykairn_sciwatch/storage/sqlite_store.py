@@ -541,3 +541,19 @@ class SciWatchStore:
                 }
             )
         return results
+
+    def delete_topic(self, topic_slug: str) -> Dict[str, int]:
+        """Supprime toutes les publications et exécutions d'un sujet donné."""
+        with self._connect() as conn:
+            cur_pubs = conn.execute(
+                "DELETE FROM publications WHERE topic_slug = ?",
+                (topic_slug,),
+            )
+            cur_runs = conn.execute(
+                "DELETE FROM runs WHERE topic_slug = ?",
+                (topic_slug,),
+            )
+            return {
+                "deleted_publications": cur_pubs.rowcount,
+                "deleted_runs": cur_runs.rowcount,
+            }

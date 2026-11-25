@@ -375,6 +375,55 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self._send_json({"error": "Not found"}, status=404)
 
+    def do_DELETE(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.rstrip("/")
+        qs = urllib.parse.parse_qs(parsed.query)
+
+        role = self._authenticate_request()
+        if role is None:
+            self._send_json({"error": "Non autorisé — clé SciWatch requise."}, status=401)
+            return
+        if role != "admin":
+            self._send_json({"error": "Action réservée à l'administrateur."}, status=403)
+            return
+
+        if path == "/api/profiles":
+            raw_topic = (qs.get("topic") or [""])[0]
+            topic = self._validate_slug_param(raw_topic)
+            if not topic or topic == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
+
+            removed_files = 0
+            for ext in (".yaml", ".yml", ".json"):
+                candidate = self.pipeline.config.profiles_dir / f"{topic}{ext}"
+                if candidate.is_file():
+                    candidate.unlink()
+                    removed_files += 1
+
+            for rep in self.pipeline.config.reports_dir.glob(f"{topic}_*"):
+                if rep.is_file():
+                    rep.unlink()
+
+            db_deleted = self.pipeline.store.delete_topic(topic)
+            if removed_files == 0 and db_deleted["deleted_publications"] == 0 and db_deleted["deleted_runs"] == 0:
+                self._send_json({"error": f"Sujet '{topic}' introuvable."}, status=404)
+                return
+
+            self._send_json(
+                {
+                    "status": "deleted",
+                    "topic": topic,
+                    "removed_files": removed_files,
+                    **db_deleted,
+                },
+                status=200,
+            )
+            return
+
+        self._send_json({"error": "Not found"}, status=404)
+
 
 class ReusableThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True

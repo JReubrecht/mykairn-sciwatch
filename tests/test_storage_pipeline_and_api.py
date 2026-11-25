@@ -205,6 +205,43 @@ class TestStoragePipelineAndApi(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as ctx400:
                     urllib.request.urlopen(req_traversal, timeout=5)
                 self.assertEqual(ctx400.exception.code, 400)
+
+                # 6. DELETE /api/profiles: reader -> 403, admin on temp profile -> 200
+                req_del_reader = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/profiles?topic=temp_del_test",
+                    headers={"X-SciWatch-Secret": cfg.api_secret, "X-SciWatch-Role": "reader"},
+                    method="DELETE",
+                )
+                with self.assertRaises(urllib.error.HTTPError) as ctx_del_403:
+                    urllib.request.urlopen(req_del_reader, timeout=5)
+                self.assertEqual(ctx_del_403.exception.code, 403)
+
+                cfg.profiles_dir = tmp_dir / "profiles"
+                cfg.profiles_dir.mkdir(parents=True, exist_ok=True)
+                req_create = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/profiles",
+                    data=json.dumps({"name": "Temp Del Test", "keywords": ["trail", "sleep"]}).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-SciWatch-Secret": cfg.api_secret,
+                        "X-SciWatch-Role": "admin",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req_create, timeout=5) as resp:
+                    self.assertEqual(resp.status, 201)
+                    created_slug = json.loads(resp.read().decode("utf-8"))["profile"]["slug"]
+
+                req_del_admin = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/profiles?topic={created_slug}",
+                    headers={"X-SciWatch-Secret": cfg.api_secret, "X-SciWatch-Role": "admin"},
+                    method="DELETE",
+                )
+                with urllib.request.urlopen(req_del_admin, timeout=5) as resp:
+                    self.assertEqual(resp.status, 200)
+                    del_payload = json.loads(resp.read().decode("utf-8"))
+                    self.assertEqual(del_payload["status"], "deleted")
+                    self.assertEqual(del_payload["removed_files"], 1)
             finally:
                 server.shutdown()
                 server.server_close()
