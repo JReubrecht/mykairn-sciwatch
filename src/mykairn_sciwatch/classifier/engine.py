@@ -28,6 +28,7 @@ from mykairn_sciwatch.models import (
     RawPublication,
     TopicProfile,
 )
+from mykairn_sciwatch.search_syntax import matches_boolean_query
 
 
 # Recommandations pratiques de coaching par thème (enrichies dynamiquement avec les résultats de l'article)
@@ -106,9 +107,30 @@ class ScientificClassifier6D:
         raw = record.raw
         full_text_lower = f"{raw.title} {raw.abstract} {' '.join(raw.mesh_terms)} {' '.join(raw.concepts)}".lower()
 
-        # 0. Filtre d'exclusion et score de pertinence thématique
+        # 0. Filtres temporels, d'exclusion, booléen strict, et critères méthodologiques paramétrés
+        end_year = getattr(profile, "audit_end_year", None)
+        if end_year and raw.publication_year and raw.publication_year > end_year:
+            return None
+        if profile.audit_start_year and raw.publication_year and raw.publication_year < profile.audit_start_year:
+            return None
+
         if self._is_excluded(full_text_lower, profile):
             return None
+
+        if getattr(profile, "open_access_only", False) and not (raw.is_open_access or raw.pdf_url):
+            return None
+
+        min_cit = int(getattr(profile, "min_citations", 0) or 0)
+        if min_cit > 0 and raw.citation_count < min_cit:
+            return None
+
+        if getattr(profile, "humans_only", False) and self._is_animal_or_invitro_only(full_text_lower):
+            return None
+
+        bool_q = (getattr(profile, "boolean_query", "") or "").strip()
+        if bool_q and getattr(profile, "strict_boolean", True):
+            if not matches_boolean_query(raw, bool_q):
+                return None
 
         relevance_score = self._compute_relevance(raw, full_text_lower, profile)
         if relevance_score < profile.min_relevance_score:
@@ -116,6 +138,13 @@ class ScientificClassifier6D:
 
         # D1. Type de publication & Niveau de preuve EBM
         pub_type_key = self._detect_publication_type(raw, full_text_lower)
+        if getattr(profile, "exclude_preprints", False) and pub_type_key == "preprint":
+            return None
+
+        allowed_types = list(getattr(profile, "allowed_publication_types", []) or [])
+        if allowed_types and pub_type_key not in allowed_types:
+            return None
+
         ebm_info = PUBLICATION_TYPES_EBM.get(pub_type_key, PUBLICATION_TYPES_EBM["original_research"])
 
         # D2. Thème principal, thèmes secondaires & tags
@@ -125,6 +154,13 @@ class ScientificClassifier6D:
 
         # Extraction de la taille d'échantillon (n=...) et du cadre d'étude
         sample_size = self._extract_sample_size(raw.abstract)
+        min_sample = int(getattr(profile, "min_sample_size", 0) or 0)
+        if min_sample > 0:
+            if sample_size is not None and sample_size < min_sample:
+                return None
+            if sample_size is None and pub_type_key not in ("meta_analysis", "systematic_review"):
+                return None
+
         study_setting = self._detect_study_setting(full_text_lower, pub_type_key)
 
         # D3. Score de Qualité Méthodologique (/100)
@@ -135,6 +171,9 @@ class ScientificClassifier6D:
             sample_size=sample_size,
             profile=profile,
         )
+        min_qual = float(getattr(profile, "min_quality_score", 0.0) or 0.0)
+        if min_qual > 0 and quality_score < min_qual:
+            return None
 
         # D4. Score de Portée, Applicabilité Terrain & Niveau d'Athlète (/100)
         athlete_level, athlete_level_label = self._detect_athlete_scope(full_text_lower, profile)
@@ -231,6 +270,45 @@ class ScientificClassifier6D:
         return hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
+    def _is_animal_or_invitro_only(full_text_lower: str) -> bool:
+        animal_markers = (
+            "mice",
+            "mouse",
+            "murine",
+            "rat model",
+            "wistar",
+            "sprague-dawley",
+            "rodent",
+            "zebrafish",
+            "drosophila",
+            "porcine",
+            "in vitro",
+        )
+        human_markers = (
+            "human",
+            "humans",
+            "athlete",
+            "athletes",
+            "runner",
+            "runners",
+            "participant",
+            "participants",
+            "patient",
+            "patients",
+            "subjects",
+            "men",
+            "women",
+            "male",
+            "female",
+            "adult",
+        )
+        has_animal = any(re.search(rf"\b{re.escape(m)}\b", full_text_lower) for m in animal_markers)
+        if not has_animal:
+            return False
+        has_human = any(re.search(rf"\b{re.escape(h)}\b", full_text_lower) for h in human_markers)
+        return not has_human
+
+    @staticmethod
     def _is_excluded(full_text_lower: str, profile: TopicProfile) -> bool:
         for exc in profile.exclusion_keywords:
             pattern = rf"\b{re.escape(exc.lower())}\b"
@@ -242,6 +320,15 @@ class ScientificClassifier6D:
     def _compute_relevance(raw: RawPublication, full_text_lower: str, profile: TopicProfile) -> float:
         title_lower = raw.title.lower()
         score = 0.0
+
+        bool_q = (getattr(profile, "boolean_query", "") or "").strip()
+        if bool_q and matches_boolean_query(raw, bool_q):
+            score += 18.0
+        else:
+            for q_item in profile.queries:
+                if q_item.strip() and matches_boolean_query(raw, q_item):
+                    score += 14.0
+                    break
 
         for kw in profile.inclusion_keywords:
             kw_l = kw.lower()

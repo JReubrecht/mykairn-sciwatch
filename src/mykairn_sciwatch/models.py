@@ -115,6 +115,8 @@ class TopicProfile:
     domain: str = "sports_science"
     language: str = "fr"
     queries: List[str] = field(default_factory=list)
+    boolean_query: str = ""
+    query_blocks: List[Dict[str, Any]] = field(default_factory=list)
     inclusion_keywords: List[str] = field(default_factory=list)
     exclusion_keywords: List[str] = field(default_factory=list)
     high_impact_journals: List[str] = field(default_factory=list)
@@ -122,9 +124,22 @@ class TopicProfile:
     themes: List[ThemeConfig] = field(default_factory=list)
     target_scopes: Dict[str, List[str]] = field(default_factory=dict)
     audit_start_year: int = 2015
+    audit_end_year: Optional[int] = None
     watch_lookback_days: int = 30
     max_results_per_source: int = 40
     min_relevance_score: float = 15.0
+    enabled_sources: List[str] = field(
+        default_factory=lambda: ["pubmed", "openalex", "semantic_scholar", "crossref"]
+    )
+    allowed_publication_types: List[str] = field(default_factory=list)
+    humans_only: bool = False
+    open_access_only: bool = False
+    exclude_preprints: bool = False
+    strict_boolean: bool = True
+    search_languages: List[str] = field(default_factory=list)
+    min_citations: int = 0
+    min_sample_size: int = 0
+    min_quality_score: float = 0.0
     llm_system_prompt: str = ""
 
     def to_dict(self) -> Dict[str, Any]:

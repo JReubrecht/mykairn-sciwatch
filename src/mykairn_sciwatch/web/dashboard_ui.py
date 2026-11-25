@@ -957,11 +957,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Barre de filtres multi-critères -->
+    <!-- Barre de filtres multi-critères & booléenne -->
     <div class="filters-bar">
-      <div class="filter-group">
-        <label>Recherche Plein Texte</label>
-        <input type="text" id="filterSearch" placeholder="ex: polarized, downhill, gut training, HRV..." oninput="loadPublications()" />
+      <div class="filter-group" style="grid-column: 1 / -1;">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
+          <label style="margin-bottom:0;">Requête Booléenne Scientifique (AND · OR · NOT · "..." · (...) · * · ti: au: jo: mesh:)</label>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken(' AND ')">AND</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken(' OR ')">OR</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken(' NOT ')">NOT</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken('\"\"')">"phrase"</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken('()')">( )</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken('*')">*</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken('ti:')">ti:</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken('au:')">au:</button>
+            <button type="button" class="btn-outline" style="padding:2px 7px;font-size:10px;font-family:var(--font-mono);" onclick="insertCorpusToken('mesh:')">mesh:</button>
+          </div>
+        </div>
+        <input type="text" id="filterSearch" placeholder='ex: ("trail running" OR ultramarathon) AND (sleep OR HRV) NOT mice' oninput="loadPublications()" />
       </div>
       <button type="button" class="btn-outline mobile-only-btn" id="btnToggleFilters" onclick="toggleMobileFilters()" style="width:100%;justify-content:center;">🔎 Filtres &amp; Tri (D1–D4)</button>
       <div class="filters-collapsible" id="filtersCollapsible">
@@ -988,6 +1001,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </select>
       </div>
       <div class="filter-group">
+        <label>Année Min</label>
+        <input type="number" id="filterYearFrom" placeholder="2015" min="1950" max="2030" onchange="loadPublications()" />
+      </div>
+      <div class="filter-group">
+        <label>Année Max</label>
+        <input type="number" id="filterYearTo" placeholder="2026" min="1950" max="2030" onchange="loadPublications()" />
+      </div>
+      <div class="filter-group">
         <label>Tri Principal</label>
         <select id="filterSort" onchange="loadPublications()">
           <option value="overall_score">Score Global 6D (Décroissant)</option>
@@ -997,6 +1018,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <option value="citation_count">Impact &amp; Citations</option>
           <option value="evidence_tier">Pyramide EBM (Niveau 1A d'abord)</option>
         </select>
+      </div>
+      <div class="filter-group" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <label style="display:inline-flex;align-items:center;gap:5px;margin-bottom:0;cursor:pointer;"><input type="checkbox" id="filterOA" onchange="loadPublications()" style="width:auto;" /> Open Access</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;margin-bottom:0;cursor:pointer;"><input type="checkbox" id="filterNoPreprint" onchange="loadPublications()" style="width:auto;" /> Sans preprints</label>
       </div>
       <div class="filter-group">
         <button class="btn-outline" style="width:100%;justify-content:center;" onclick="resetFilters()">Réinitialiser</button>
@@ -1010,24 +1035,49 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <!-- Modal Création d'un Nouveau Sujet d'Audit Modulaire -->
   <div class="modal-backdrop" id="newTopicModal">
-    <div class="modal">
-      <h2>➕ Configurer un Nouveau Sujet d'Audit Scientifique</h2>
-      <p>Le moteur myKairn SciWatch génère un profil déclaratif YAML multi-sources (PubMed, OpenAlex, Semantic Scholar, Crossref) permettant d'auditer n'importe quel sujet.</p>
+    <div class="modal" style="max-width:720px;">
+      <h2>➕ Configurer une Recherche Scientifique Paramétrable</h2>
+      <p>Constructeur compatible PubMed Entrez, OpenAlex, Semantic Scholar Bulk et Crossref (AND, OR, NOT, parenthèses, troncature *, champs [Title/Abstract]).</p>
       <div class="form-row">
         <label>Titre du sujet à auditer *</label>
         <input type="text" id="newTopicName" placeholder="ex: Sommeil, VFC et Récupération en Ultra-Endurance" />
       </div>
       <div class="form-row">
-        <label>Mots-clés scientifiques (en anglais, séparés par des virgules) *</label>
-        <input type="text" id="newTopicKeywords" placeholder="ex: heart rate variability, sleep deprivation, endurance recovery, overreaching" />
+        <label>Équation Booléenne Experte (AND / OR / NOT)</label>
+        <textarea id="newTopicBoolean" rows="2" class="font-mono" placeholder='ex: ("trail running" OR ultramarathon*) AND ("heart rate variability" OR sleep) NOT mice'></textarea>
       </div>
       <div class="form-row">
-        <label>Domaine scientifique</label>
-        <input type="text" id="newTopicDomain" value="sports_science" />
+        <label>Ou mots-clés simples (séparés par des virgules)</label>
+        <input type="text" id="newTopicKeywords" placeholder="ex: heart rate variability, sleep deprivation, endurance recovery" />
       </div>
-      <div class="form-row">
-        <label>Année de départ de l'audit historique</label>
-        <input type="number" id="newTopicYear" value="2016" min="1990" max="2026" />
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;" class="form-row">
+        <div>
+          <label>Année début</label>
+          <input type="number" id="newTopicYear" value="2016" min="1950" max="2030" />
+        </div>
+        <div>
+          <label>Année fin (opt.)</label>
+          <input type="number" id="newTopicEndYear" placeholder="2026" min="1950" max="2030" />
+        </div>
+        <div>
+          <label>Max / source</label>
+          <input type="number" id="newTopicMaxPerSource" value="30" min="5" max="100" />
+        </div>
+        <div>
+          <label>Domaine</label>
+          <input type="text" id="newTopicDomain" value="sports_science" />
+        </div>
+      </div>
+      <div class="form-row" style="display:flex;flex-wrap:wrap;gap:12px;">
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="pubmed" checked style="width:auto;" /> PubMed</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="openalex" checked style="width:auto;" /> OpenAlex</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="semantic_scholar" checked style="width:auto;" /> Semantic Scholar</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="srcCheck" value="crossref" checked style="width:auto;" /> Crossref</label>
+      </div>
+      <div class="form-row" style="display:flex;flex-wrap:wrap;gap:12px;">
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="newTopicHumans" style="width:auto;" /> Humains uniquement</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="newTopicOA" style="width:auto;" /> Open Access uniquement</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="newTopicNoPreprint" style="width:auto;" /> Exclure preprints</label>
       </div>
       <div class="form-row">
         <label>Objectif / Description de l'audit</label>
@@ -1176,12 +1226,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       loadPublications();
     }
 
+    function insertCorpusToken(token) {
+      const inp = document.getElementById("filterSearch");
+      const start = inp.selectionStart ?? inp.value.length;
+      const end = inp.selectionEnd ?? inp.value.length;
+      inp.value = inp.value.slice(0, start) + token + inp.value.slice(end);
+      inp.focus();
+      loadPublications();
+    }
+
     function resetFilters(reload = true) {
       document.getElementById("filterSearch").value = "";
       document.getElementById("filterTheme").value = "";
       document.getElementById("filterType").value = "";
       document.getElementById("filterAthlete").value = "";
       document.getElementById("filterGrade").value = "";
+      document.getElementById("filterYearFrom").value = "";
+      document.getElementById("filterYearTo").value = "";
+      document.getElementById("filterOA").checked = false;
+      document.getElementById("filterNoPreprint").checked = false;
       document.getElementById("filterSort").value = "overall_score";
       if (reload) loadPublications();
     }
@@ -1194,6 +1257,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         type: document.getElementById("filterType").value,
         athlete_level: document.getElementById("filterAthlete").value,
         grade: document.getElementById("filterGrade").value,
+        year_from: document.getElementById("filterYearFrom").value,
+        year_to: document.getElementById("filterYearTo").value,
+        only_open_access: document.getElementById("filterOA").checked ? "1" : "",
+        exclude_preprints: document.getElementById("filterNoPreprint").checked ? "1" : "",
         sort: document.getElementById("filterSort").value,
         limit: "120"
       });
@@ -1296,13 +1363,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     async function createNewTopic(runAuditAfter) {
       const name = document.getElementById("newTopicName").value.trim();
+      const booleanQuery = document.getElementById("newTopicBoolean").value.trim();
       const kwRaw = document.getElementById("newTopicKeywords").value.trim();
       const domain = document.getElementById("newTopicDomain").value.trim() || "general_science";
       const startYear = parseInt(document.getElementById("newTopicYear").value || "2016", 10);
+      const endYearRaw = document.getElementById("newTopicEndYear").value.trim();
+      const maxPerSource = parseInt(document.getElementById("newTopicMaxPerSource").value || "30", 10);
       const desc = document.getElementById("newTopicDesc").value.trim();
+      const enabledSources = Array.from(document.querySelectorAll(".srcCheck:checked")).map(el => el.value);
 
-      if (!name || !kwRaw) {
-        showToast("Veuillez renseigner un titre et des mots-clés.");
+      if (!name || (!kwRaw && !booleanQuery)) {
+        showToast("Veuillez renseigner un titre et une équation booléenne ou des mots-clés.");
         return;
       }
       const keywords = kwRaw.split(",").map(s => s.trim()).filter(Boolean);
@@ -1311,13 +1382,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           name: name,
+          boolean_query: booleanQuery,
           keywords: keywords,
           domain: domain,
           audit_start_year: startYear,
+          audit_end_year: endYearRaw ? parseInt(endYearRaw, 10) : null,
+          max_results_per_source: maxPerSource,
+          enabled_sources: enabledSources,
+          humans_only: document.getElementById("newTopicHumans").checked,
+          open_access_only: document.getElementById("newTopicOA").checked,
+          exclude_preprints: document.getElementById("newTopicNoPreprint").checked,
           description: desc
         })
       });
       const data = await res.json();
+      if (!res.ok) {
+        showToast(`❌ ${data.error || "Erreur lors de la création"}`);
+        return;
+      }
       if (data.profile && data.profile.slug) {
         closeNewTopicModal();
         currentTopic = data.profile.slug;

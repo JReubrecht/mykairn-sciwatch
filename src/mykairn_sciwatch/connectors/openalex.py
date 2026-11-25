@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from mykairn_sciwatch.connectors.base import clean_html_text, http_get_json, normalize_doi
 from mykairn_sciwatch.models import RawPublication
+from mykairn_sciwatch.search_syntax import compile_for_openalex
 
 
 def reconstruct_abstract(inverted_index: Optional[Dict[str, List[int]]]) -> str:
@@ -129,21 +130,37 @@ class OpenAlexConnector:
         query: str,
         max_results: int = 25,
         start_year: int = 2015,
+        end_year: Optional[int] = None,
         lookback_days: Optional[int] = None,
         sort: str = "relevance_score:desc",
+        open_access_only: bool = False,
+        exclude_preprints: bool = False,
+        min_citations: int = 0,
+        languages: Optional[List[str]] = None,
     ) -> List[RawPublication]:
-        """Interroge OpenAlex Works avec filtres temporels et tri par pertinence ou citations."""
-        # Nettoyage léger de la requête booléenne pour le moteur full-text OpenAlex
-        clean_q = query.replace("(", " ").replace(")", " ")
+        """Interroge OpenAlex Works avec équation booléenne (AND/OR/NOT, parenthèses) et filtres avancés."""
+        compiled_q = compile_for_openalex(query)
         filters = ["has_abstract:true"]
         if lookback_days is not None and lookback_days > 0:
             since = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
             filters.append(f"from_publication_date:{since}")
         elif start_year > 0:
             filters.append(f"from_publication_date:{start_year}-01-01")
+        if end_year and end_year > 0:
+            filters.append(f"to_publication_date:{end_year}-12-31")
+        if open_access_only:
+            filters.append("is_oa:true")
+        if exclude_preprints:
+            filters.append("type:!preprint")
+        if min_citations > 0:
+            filters.append(f"cited_by_count:>{min_citations - 1}")
+        if languages:
+            clean_langs = [l.strip().lower() for l in languages if l.strip()]
+            if clean_langs:
+                filters.append(f"language:{'|'.join(clean_langs)}")
 
         params = {
-            "search": clean_q,
+            "search": compiled_q,
             "filter": ",".join(filters),
             "per-page": str(min(max_results, 50)),
             "sort": sort,

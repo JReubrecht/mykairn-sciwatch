@@ -12,12 +12,18 @@ from typing import Any, Dict, List, Optional
 
 from mykairn_sciwatch.connectors.base import clean_html_text, http_get_json, normalize_doi
 from mykairn_sciwatch.models import RawPublication
+from mykairn_sciwatch.search_syntax import (
+    S2_PUBLICATION_TYPES,
+    compile_for_semantic_scholar_basic,
+    compile_for_semantic_scholar_bulk,
+)
 
 
 class SemanticScholarConnector:
-    """Client pour Semantic Scholar Graph API v1."""
+    """Client pour Semantic Scholar Graph API v1 (/paper/search/bulk booléen + repli /paper/search)."""
 
     BASE_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
+    BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
     FIELDS = (
         "paperId,externalIds,url,title,abstract,venue,year,publicationDate,"
         "citationCount,influentialCitationCount,isOpenAccess,openAccessPdf,"
@@ -32,38 +38,72 @@ class SemanticScholarConnector:
         query: str,
         max_results: int = 20,
         start_year: int = 2015,
+        end_year: Optional[int] = None,
+        open_access_only: bool = False,
+        min_citations: int = 0,
+        allowed_pub_types: Optional[List[str]] = None,
     ) -> List[RawPublication]:
-        """Recherche des articles sur Semantic Scholar."""
-        # Simplification d'une requête booléenne complexe pour l'endpoint /paper/search
-        simplified = (
-            query.replace("AND", " ")
-            .replace("OR", " ")
-            .replace("(", " ")
-            .replace(")", " ")
-            .replace('"', " ")
-        )
-        tokens = [t.strip() for t in simplified.split() if len(t.strip()) > 2]
-        compact_query = " ".join(dict.fromkeys(tokens[:10]))
-
+        """Recherche des articles sur Semantic Scholar avec support booléen natif (/bulk)."""
         current_year = datetime.now(timezone.utc).year
-        params = {
-            "query": compact_query,
-            "limit": str(min(max_results, 40)),
-            "fields": self.FIELDS,
-            "year": f"{start_year}-{current_year}",
-        }
+        upper_year = end_year if (end_year and end_year >= start_year) else current_year
         headers: Dict[str, str] = {}
         if self.api_key:
             headers["x-api-key"] = self.api_key
 
-        url = f"{self.BASE_URL}?{urllib.parse.urlencode(params)}"
+        bulk_query = compile_for_semantic_scholar_bulk(query)
+        s2_types = list(
+            dict.fromkeys(
+                S2_PUBLICATION_TYPES[pt]
+                for pt in (allowed_pub_types or [])
+                if pt in S2_PUBLICATION_TYPES
+            )
+        )
+
+        bulk_params: Dict[str, str] = {
+            "query": bulk_query,
+            "fields": self.FIELDS,
+            "year": f"{start_year}-{upper_year}",
+        }
+        if open_access_only:
+            bulk_params["openAccessPdf"] = "true"
+        if min_citations > 0:
+            bulk_params["minCitationCount"] = str(min_citations)
+        if s2_types:
+            bulk_params["publicationTypes"] = ",".join(s2_types)
+
+        limit = min(max_results, 40)
+        items: List[Dict[str, Any]] = []
+        bulk_url = f"{self.BULK_URL}?{urllib.parse.urlencode(bulk_params)}"
         try:
-            data = http_get_json(url, headers=headers, timeout=15, retries=1)
+            data = http_get_json(bulk_url, headers=headers, timeout=15, retries=1)
+            items = list(data.get("data") or [])[:limit]
         except Exception:
-            return []
+            items = []
+
+        if not items:
+            compact_query = compile_for_semantic_scholar_basic(query)
+            if compact_query:
+                basic_params: Dict[str, str] = {
+                    "query": compact_query,
+                    "limit": str(limit),
+                    "fields": self.FIELDS,
+                    "year": f"{start_year}-{upper_year}",
+                }
+                if open_access_only:
+                    basic_params["openAccessPdf"] = "true"
+                if min_citations > 0:
+                    basic_params["minCitationCount"] = str(min_citations)
+                if s2_types:
+                    basic_params["publicationTypes"] = ",".join(s2_types)
+                url = f"{self.BASE_URL}?{urllib.parse.urlencode(basic_params)}"
+                try:
+                    data = http_get_json(url, headers=headers, timeout=15, retries=1)
+                    items = list(data.get("data") or [])[:limit]
+                except Exception:
+                    return []
 
         results: List[RawPublication] = []
-        for item in data.get("data", []):
+        for item in items:
             parsed = self._parse_item(item, query_matched=query)
             if parsed:
                 results.append(parsed)

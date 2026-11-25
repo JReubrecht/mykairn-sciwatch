@@ -105,6 +105,17 @@ def parse_profile_dict(data: Dict[str, Any]) -> TopicProfile:
             )
         )
 
+    raw_end_year = data.get("audit_end_year")
+    audit_end_year = int(raw_end_year) if raw_end_year not in (None, "", 0) else None
+    raw_sources = data.get("enabled_sources")
+    enabled_sources = (
+        [str(s).strip() for s in raw_sources if str(s).strip()]
+        if isinstance(raw_sources, list) and raw_sources
+        else ["pubmed", "openalex", "semantic_scholar", "crossref"]
+    )
+    raw_blocks = data.get("query_blocks")
+    query_blocks = [dict(b) for b in raw_blocks if isinstance(b, dict)] if isinstance(raw_blocks, list) else []
+
     return TopicProfile(
         slug=str(data["slug"]),
         name=str(data["name"]),
@@ -112,6 +123,8 @@ def parse_profile_dict(data: Dict[str, Any]) -> TopicProfile:
         domain=str(data.get("domain", "sports_science")),
         language=str(data.get("language", "fr")),
         queries=[str(q) for q in data.get("queries", [])],
+        boolean_query=str(data.get("boolean_query", "") or ""),
+        query_blocks=query_blocks,
         inclusion_keywords=[str(k).lower() for k in data.get("inclusion_keywords", [])],
         exclusion_keywords=[str(k).lower() for k in data.get("exclusion_keywords", [])],
         high_impact_journals=[str(j) for j in data.get("high_impact_journals", [])],
@@ -122,9 +135,28 @@ def parse_profile_dict(data: Dict[str, Any]) -> TopicProfile:
             for k, vals in data.get("target_scopes", {}).items()
         },
         audit_start_year=int(data.get("audit_start_year", 2015)),
+        audit_end_year=audit_end_year,
         watch_lookback_days=int(data.get("watch_lookback_days", 30)),
         max_results_per_source=int(data.get("max_results_per_source", 40)),
         min_relevance_score=float(data.get("min_relevance_score", 15.0)),
+        enabled_sources=enabled_sources,
+        allowed_publication_types=[
+            str(pt).strip()
+            for pt in (data.get("allowed_publication_types") or [])
+            if str(pt).strip()
+        ],
+        humans_only=bool(data.get("humans_only", False)),
+        open_access_only=bool(data.get("open_access_only", False)),
+        exclude_preprints=bool(data.get("exclude_preprints", False)),
+        strict_boolean=bool(data.get("strict_boolean", True)),
+        search_languages=[
+            str(l).strip().lower()
+            for l in (data.get("search_languages") or [])
+            if str(l).strip()
+        ],
+        min_citations=int(data.get("min_citations", 0) or 0),
+        min_sample_size=int(data.get("min_sample_size", 0) or 0),
+        min_quality_score=float(data.get("min_quality_score", 0.0) or 0.0),
         llm_system_prompt=str(data.get("llm_system_prompt", "")),
     )
 

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from mykairn_sciwatch.connectors.base import clean_html_text, http_get_json, http_get_text, normalize_doi
 from mykairn_sciwatch.models import RawPublication
+from mykairn_sciwatch.search_syntax import compile_for_crossref
 
 
 class CrossrefRssConnector:
@@ -28,29 +29,40 @@ class CrossrefRssConnector:
         query: str,
         max_results: int = 15,
         start_year: int = 2015,
+        end_year: Optional[int] = None,
         lookback_days: Optional[int] = None,
+        exclude_preprints: bool = False,
     ) -> List[RawPublication]:
-        """Recherche des publications dans Crossref avec filtre de date."""
-        clean_q = (
-            query.replace("AND", " ")
-            .replace("OR", " ")
-            .replace("(", " ")
-            .replace(")", " ")
-            .replace('"', " ")
-        )
-        clean_q = " ".join(clean_q.split()[:12])
+        """Recherche des publications dans Crossref avec filtre de date et champs booléens."""
+        cr_fields = compile_for_crossref(query)
+        if not cr_fields.get("bibliographic") and not cr_fields.get("author") and not cr_fields.get("container_title"):
+            return []
 
         if lookback_days is not None and lookback_days > 0:
             since = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
         else:
             since = f"{start_year}-01-01"
 
-        params = {
-            "query.bibliographic": clean_q,
-            "filter": f"from-pub-date:{since},type:journal-article",
+        filter_parts = [f"from-pub-date:{since}"]
+        if exclude_preprints:
+            filter_parts.append("type:journal-article")
+        else:
+            filter_parts.append("type:journal-article")
+        if end_year and end_year >= start_year:
+            filter_parts.append(f"until-pub-date:{end_year}-12-31")
+
+        params: Dict[str, str] = {
+            "filter": ",".join(filter_parts),
             "rows": str(min(max_results, 30)),
             "mailto": self.email,
         }
+        if cr_fields.get("bibliographic"):
+            params["query.bibliographic"] = cr_fields["bibliographic"]
+        if cr_fields.get("author"):
+            params["query.author"] = cr_fields["author"]
+        if cr_fields.get("container_title"):
+            params["query.container-title"] = cr_fields["container_title"]
+
         url = f"{self.CROSSREF_URL}?{urllib.parse.urlencode(params)}"
         try:
             data = http_get_json(url, timeout=15, retries=1)

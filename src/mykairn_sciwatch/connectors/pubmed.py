@@ -14,6 +14,7 @@ from typing import List, Optional
 
 from mykairn_sciwatch.connectors.base import clean_html_text, http_get_json, http_get_text, normalize_doi
 from mykairn_sciwatch.models import RawPublication
+from mykairn_sciwatch.search_syntax import compile_for_pubmed
 
 
 MONTH_MAP = {
@@ -201,13 +202,27 @@ class PubMedConnector:
         query: str,
         max_results: int = 25,
         start_year: int = 2015,
+        end_year: Optional[int] = None,
         lookback_days: Optional[int] = None,
         sort: str = "relevance",
+        humans_only: bool = False,
+        open_access_only: bool = False,
+        exclude_preprints: bool = False,
+        allowed_pub_types: Optional[List[str]] = None,
+        languages: Optional[List[str]] = None,
     ) -> List[RawPublication]:
-        """Recherche des PMIDs avec ESearch puis récupère leurs fiches XML avec EFetch."""
+        """Recherche des PMIDs avec ESearch (syntaxe PubMed Entrez compilée) puis EFetch XML."""
+        compiled_query = compile_for_pubmed(
+            query,
+            humans_only=humans_only,
+            open_access_only=open_access_only,
+            exclude_preprints=exclude_preprints,
+            allowed_pub_types=allowed_pub_types,
+            languages=languages,
+        )
         params = {
             "db": "pubmed",
-            "term": query,
+            "term": compiled_query,
             "retmode": "json",
             "retmax": str(max_results),
             "sort": sort,
@@ -222,9 +237,9 @@ class PubMedConnector:
             params["mindate"] = since
             params["maxdate"] = today
             params["datetype"] = "pdat"
-        elif start_year > 0:
-            params["mindate"] = f"{start_year}/01/01"
-            params["maxdate"] = "3000/12/31"
+        elif start_year > 0 or (end_year and end_year > 0):
+            params["mindate"] = f"{start_year if start_year > 0 else 1900}/01/01"
+            params["maxdate"] = f"{end_year}/12/31" if (end_year and end_year > 0) else "3000/12/31"
             params["datetype"] = "pdat"
 
         esearch_url = f"{self.BASE_URL}/esearch.fcgi?{urllib.parse.urlencode(params)}"

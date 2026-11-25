@@ -151,15 +151,35 @@ class MultiSourceAggregator:
         - En mode 'audit' : combine les articles pertinents récents ET les articles fondateurs les plus cités.
         - En mode 'watch' : cible les nouvelles parutions sur la fenêtre `lookback_days`.
         """
-        sources = set(enabled_sources or ["pubmed", "openalex", "semantic_scholar", "crossref", "rss"])
+        sources = set(
+            enabled_sources
+            or profile.enabled_sources
+            or ["pubmed", "openalex", "semantic_scholar", "crossref", "rss"]
+        )
         limit = max_per_source or profile.max_results_per_source
         days = lookback_days if mode == "watch" else None
-        per_query_limit = max(6, limit // max(1, len(profile.queries)))
+
+        active_queries: List[str] = []
+        if getattr(profile, "boolean_query", "").strip():
+            active_queries.append(profile.boolean_query.strip())
+        for q in profile.queries:
+            q_s = str(q).strip()
+            if q_s and q_s not in active_queries:
+                active_queries.append(q_s)
+        per_query_limit = max(6, limit // max(1, len(active_queries)))
 
         all_raw: List[RawPublication] = []
         counts: Dict[str, int] = {s: 0 for s in sources}
 
-        for query in profile.queries:
+        end_year = getattr(profile, "audit_end_year", None)
+        humans_only = bool(getattr(profile, "humans_only", False))
+        open_access_only = bool(getattr(profile, "open_access_only", False))
+        exclude_preprints = bool(getattr(profile, "exclude_preprints", False))
+        allowed_pub_types = list(getattr(profile, "allowed_publication_types", []) or [])
+        search_languages = list(getattr(profile, "search_languages", []) or [])
+        min_citations = int(getattr(profile, "min_citations", 0) or 0)
+
+        for query in active_queries:
             # 1. PubMed (NCBI Entrez)
             if "pubmed" in sources:
                 try:
@@ -168,8 +188,14 @@ class MultiSourceAggregator:
                         query=query,
                         max_results=per_query_limit,
                         start_year=profile.audit_start_year,
+                        end_year=end_year,
                         lookback_days=days,
                         sort=pm_sort,
+                        humans_only=humans_only,
+                        open_access_only=open_access_only,
+                        exclude_preprints=exclude_preprints,
+                        allowed_pub_types=allowed_pub_types,
+                        languages=search_languages,
                     )
                     all_raw.extend(pm_items)
                     counts["pubmed"] = counts.get("pubmed", 0) + len(pm_items)
@@ -184,8 +210,13 @@ class MultiSourceAggregator:
                         query=query,
                         max_results=per_query_limit,
                         start_year=profile.audit_start_year,
+                        end_year=end_year,
                         lookback_days=days,
                         sort=oa_sort,
+                        open_access_only=open_access_only,
+                        exclude_preprints=exclude_preprints,
+                        min_citations=min_citations,
+                        languages=search_languages,
                     )
                     all_raw.extend(oa_items)
                     counts["openalex"] = counts.get("openalex", 0) + len(oa_items)
@@ -195,8 +226,13 @@ class MultiSourceAggregator:
                             query=query,
                             max_results=max(5, per_query_limit // 2),
                             start_year=profile.audit_start_year,
+                            end_year=end_year,
                             lookback_days=None,
                             sort="cited_by_count:desc",
+                            open_access_only=open_access_only,
+                            exclude_preprints=exclude_preprints,
+                            min_citations=min_citations,
+                            languages=search_languages,
                         )
                         all_raw.extend(oa_top_cited)
                         counts["openalex"] = counts.get("openalex", 0) + len(oa_top_cited)
@@ -210,6 +246,10 @@ class MultiSourceAggregator:
                         query=query,
                         max_results=max(5, per_query_limit // 2),
                         start_year=profile.audit_start_year,
+                        end_year=end_year,
+                        open_access_only=open_access_only,
+                        min_citations=min_citations,
+                        allowed_pub_types=allowed_pub_types,
                     )
                     all_raw.extend(s2_items)
                     counts["semantic_scholar"] = counts.get("semantic_scholar", 0) + len(s2_items)
@@ -223,7 +263,9 @@ class MultiSourceAggregator:
                         query=query,
                         max_results=max(5, per_query_limit // 3),
                         start_year=profile.audit_start_year,
+                        end_year=end_year,
                         lookback_days=days,
+                        exclude_preprints=exclude_preprints,
                     )
                     all_raw.extend(cr_items)
                     counts["crossref"] = counts.get("crossref", 0) + len(cr_items)

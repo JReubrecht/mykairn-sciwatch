@@ -9,8 +9,9 @@ import json
 import re
 import threading
 import urllib.parse
+from dataclasses import replace as dc_replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 _VALID_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _RUN_LOCK = threading.Lock()
@@ -26,7 +27,26 @@ from mykairn_sciwatch.reporting.exporters import (
     export_to_mykairn_knowledge_pack,
 )
 from mykairn_sciwatch.reporting.markdown_report import generate_markdown_report
+from mykairn_sciwatch.search_syntax import build_boolean_from_blocks, validate_boolean_query
 from mykairn_sciwatch.web.dashboard_ui import DASHBOARD_HTML
+
+
+def _parse_bool_flag(val: Any, default: bool = False) -> bool:
+    if val is None or val == "":
+        return default
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _parse_str_list(val: Any) -> List[str]:
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return [str(x).strip() for x in val if str(x).strip()]
+    if isinstance(val, str):
+        return [s.strip() for s in val.split(",") if s.strip()]
+    return []
 
 
 class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -176,7 +196,24 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             sort_by = q_val("sort", "overall_score")
             min_q = float(q_val("min_quality", "0") or 0)
             min_s = float(q_val("min_scope", "0") or 0)
+            min_cit = int(q_val("min_citations", "0") or 0)
+            min_n = int(q_val("min_sample_size", "0") or 0)
+            year_from_raw = q_val("year_from")
+            year_to_raw = q_val("year_to")
+            year_from = int(year_from_raw) if year_from_raw and year_from_raw.isdigit() else None
+            year_to = int(year_to_raw) if year_to_raw and year_to_raw.isdigit() else None
+            only_foundational = _parse_bool_flag(q_val("only_foundational"), False)
+            only_open_access = _parse_bool_flag(q_val("only_open_access"), False)
+            exclude_preprints = _parse_bool_flag(q_val("exclude_preprints"), False)
+            source_param = q_val("source")
+            sources_filter = _parse_str_list(source_param) if source_param else None
             limit = min(500, max(1, int(q_val("limit", "150") or 150)))
+
+            query_warning: Optional[str] = None
+            if search_q:
+                val_res = validate_boolean_query(search_q)
+                if not val_res["valid"]:
+                    query_warning = val_res["error"]
 
             pubs = self.pipeline.store.query_publications(
                 topic_slug=topic,
@@ -186,11 +223,26 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                 quality_grade=grade,
                 min_quality=min_q,
                 min_scope=min_s,
+                min_citations=min_cit,
+                min_sample_size=min_n,
+                year_from=year_from,
+                year_to=year_to,
                 search_query=search_q,
+                only_foundational=only_foundational,
+                only_open_access=only_open_access,
+                exclude_preprints=exclude_preprints,
+                sources_filter=sources_filter,
                 sort_by=sort_by,
                 limit=limit,
             )
-            self._send_json({"count": len(pubs), "publications": [p.to_dict() for p in pubs]})
+            payload: Dict[str, Any] = {
+                "count": len(pubs),
+                "publications": [p.to_dict() for p in pubs],
+                "boolean_engine": True,
+            }
+            if query_warning:
+                payload["query_warning"] = query_warning
+            self._send_json(payload)
             return
 
         if path == "/api/runs":
@@ -310,16 +362,62 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                 return
             days = body.get("lookback_days")
             max_per_source = body.get("max_per_source")
+            req_sources = _parse_str_list(body.get("enabled_sources")) or None
+            override_bool = str(body.get("boolean_query", "") or "").strip()
+            if override_bool:
+                v_bool = validate_boolean_query(override_bool)
+                if not v_bool["valid"]:
+                    self._send_json({"error": f"Équation booléenne invalide : {v_bool['error']}"}, status=400)
+                    return
 
             if not _RUN_LOCK.acquire(blocking=False):
                 self._send_json({"error": "Un audit ou une veille est déjà en cours."}, status=409)
                 return
             try:
+                base_profile = resolve_profile(topic, self.pipeline.config.profiles_dir)
+                replace_kwargs: Dict[str, Any] = {}
+                if override_bool:
+                    replace_kwargs["boolean_query"] = override_bool
+                    if not body.get("queries"):
+                        replace_kwargs["queries"] = [override_bool]
+                if isinstance(body.get("queries"), list) and body["queries"]:
+                    replace_kwargs["queries"] = [str(q).strip() for q in body["queries"] if str(q).strip()]
+                if body.get("audit_start_year"):
+                    replace_kwargs["audit_start_year"] = int(body["audit_start_year"])
+                if "audit_end_year" in body:
+                    raw_ey = body.get("audit_end_year")
+                    replace_kwargs["audit_end_year"] = int(raw_ey) if raw_ey not in (None, "", 0) else None
+                if "allowed_publication_types" in body:
+                    replace_kwargs["allowed_publication_types"] = _parse_str_list(body.get("allowed_publication_types"))
+                if "humans_only" in body:
+                    replace_kwargs["humans_only"] = _parse_bool_flag(body.get("humans_only"), False)
+                if "open_access_only" in body:
+                    replace_kwargs["open_access_only"] = _parse_bool_flag(body.get("open_access_only"), False)
+                if "exclude_preprints" in body:
+                    replace_kwargs["exclude_preprints"] = _parse_bool_flag(body.get("exclude_preprints"), False)
+                if "strict_boolean" in body:
+                    replace_kwargs["strict_boolean"] = _parse_bool_flag(body.get("strict_boolean"), True)
+                if "search_languages" in body:
+                    replace_kwargs["search_languages"] = _parse_str_list(body.get("search_languages"))
+                if "min_citations" in body and body.get("min_citations") is not None:
+                    replace_kwargs["min_citations"] = max(0, int(body["min_citations"]))
+                if "min_sample_size" in body and body.get("min_sample_size") is not None:
+                    replace_kwargs["min_sample_size"] = max(0, int(body["min_sample_size"]))
+                if "min_quality_score" in body and body.get("min_quality_score") is not None:
+                    replace_kwargs["min_quality_score"] = max(0.0, float(body["min_quality_score"]))
+                if "min_relevance_score" in body and body.get("min_relevance_score") is not None:
+                    replace_kwargs["min_relevance_score"] = max(0.0, float(body["min_relevance_score"]))
+
+                effective_profile = dc_replace(base_profile, **replace_kwargs) if replace_kwargs else base_profile
+                if _parse_bool_flag(body.get("persist_overrides"), False) and replace_kwargs:
+                    save_topic_profile(effective_profile, self.pipeline.config.profiles_dir)
+
                 summary = self.pipeline.run_for_profile(
-                    profile_or_slug=topic,
+                    profile_or_slug=effective_profile,
                     mode=mode,
                     lookback_days=int(days) if days else None,
                     max_per_source=int(max_per_source) if max_per_source else None,
+                    enabled_sources=req_sources,
                 )
                 result_payload = summary.to_dict()
                 if (
@@ -327,12 +425,11 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
                     and self.pipeline.config.mykairn_webhook_secret
                 ):
                     try:
-                        prof = resolve_profile(topic, self.pipeline.config.profiles_dir)
                         all_pubs = self.pipeline.store.query_publications(
-                            topic_slug=prof.slug,
+                            topic_slug=effective_profile.slug,
                             limit=500,
                         )
-                        pack = export_to_mykairn_knowledge_pack(prof, all_pubs)
+                        pack = export_to_mykairn_knowledge_pack(effective_profile, all_pubs)
                         result_payload["webhook_synced"] = self.pipeline.notifier.push_webhook(pack)
                     except Exception:
                         result_payload["webhook_synced"] = False
@@ -348,20 +445,61 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_json({"error": "Le champ 'name' est obligatoire"}, status=400)
                 return
-            keywords = body.get("keywords") or []
-            if isinstance(keywords, str):
-                keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+            keywords = _parse_str_list(body.get("keywords"))
+            boolean_query = str(body.get("boolean_query", "") or "").strip()
+            query_blocks = body.get("query_blocks") if isinstance(body.get("query_blocks"), list) else []
+            if not keywords and not boolean_query and not query_blocks:
+                self._send_json(
+                    {"error": "Renseignez des mots-clés, des blocs PICO ou une équation booléenne."},
+                    status=400,
+                )
+                return
             domain = str(body.get("domain", "general_science"))
             description = str(body.get("description", ""))
-            start_year = int(body.get("audit_start_year", 2016))
+            start_year = int(body.get("audit_start_year", 2016) or 2016)
+            raw_end = body.get("audit_end_year")
+            end_year = int(raw_end) if raw_end not in (None, "", 0) else None
+            slug_override = self._validate_slug_param(body.get("slug") or None)
+            if slug_override == "__INVALID__":
+                self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+                return
 
-            profile = generate_topic_profile(
-                name=name,
-                description=description,
-                domain=domain,
-                seed_keywords=keywords,
-                audit_start_year=start_year,
-            )
+            try:
+                profile = generate_topic_profile(
+                    name=name,
+                    description=description,
+                    domain=domain,
+                    seed_keywords=keywords,
+                    audit_start_year=start_year,
+                    audit_end_year=end_year,
+                    watch_lookback_days=int(body.get("watch_lookback_days", 30) or 30),
+                    boolean_query=boolean_query,
+                    custom_queries=_parse_str_list(body.get("queries")) or (
+                        [str(q).strip() for q in body.get("queries", []) if str(q).strip()]
+                        if isinstance(body.get("queries"), list)
+                        else None
+                    ),
+                    query_blocks=query_blocks,
+                    exclusion_keywords=_parse_str_list(body.get("exclusion_keywords")),
+                    high_impact_journals=_parse_str_list(body.get("high_impact_journals")) or None,
+                    enabled_sources=_parse_str_list(body.get("enabled_sources")) or None,
+                    allowed_publication_types=_parse_str_list(body.get("allowed_publication_types")),
+                    humans_only=_parse_bool_flag(body.get("humans_only"), False),
+                    open_access_only=_parse_bool_flag(body.get("open_access_only"), False),
+                    exclude_preprints=_parse_bool_flag(body.get("exclude_preprints"), False),
+                    strict_boolean=_parse_bool_flag(body.get("strict_boolean"), True),
+                    search_languages=_parse_str_list(body.get("search_languages")),
+                    min_citations=int(body.get("min_citations", 0) or 0),
+                    min_sample_size=int(body.get("min_sample_size", 0) or 0),
+                    min_relevance_score=float(body.get("min_relevance_score", 10.0) or 10.0),
+                    min_quality_score=float(body.get("min_quality_score", 0.0) or 0.0),
+                    max_results_per_source=int(body.get("max_results_per_source", 30) or 30),
+                    slug_override=slug_override,
+                )
+            except ValueError as err:
+                self._send_json({"error": str(err)}, status=400)
+                return
+
             saved_path = save_topic_profile(profile, self.pipeline.config.profiles_dir)
             self._send_json(
                 {
@@ -374,6 +512,151 @@ class SciWatchHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         self._send_json({"error": "Not found"}, status=404)
+
+    def do_PUT(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.rstrip("/")
+        qs = urllib.parse.parse_qs(parsed.query)
+
+        role = self._authenticate_request()
+        if role is None:
+            self._send_json({"error": "Non autorisé — clé SciWatch requise."}, status=401)
+            return
+        if role != "admin":
+            self._send_json({"error": "Action réservée à l'administrateur."}, status=403)
+            return
+
+        try:
+            content_len = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self._send_json({"error": "Invalid Content-Length"}, status=400)
+            return
+        if content_len < 0 or content_len > _MAX_POST_BYTES:
+            self._send_json({"error": "Payload trop volumineux (max 64 Ko)."}, status=413)
+            return
+
+        raw_body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+        try:
+            body = json.loads(raw_body) if raw_body else {}
+        except json.JSONDecodeError:
+            self._send_json({"error": "Invalid JSON body"}, status=400)
+            return
+
+        if path != "/api/profiles":
+            self._send_json({"error": "Not found"}, status=404)
+            return
+
+        raw_topic = str(body.get("topic") or body.get("slug") or (qs.get("topic") or [""])[0]).strip()
+        topic = self._validate_slug_param(raw_topic)
+        if not topic or topic == "__INVALID__":
+            self._send_json({"error": "Identifiant de sujet invalide."}, status=400)
+            return
+
+        try:
+            existing = resolve_profile(topic, self.pipeline.config.profiles_dir)
+        except FileNotFoundError:
+            self._send_json({"error": f"Sujet '{topic}' introuvable."}, status=404)
+            return
+
+        new_bool = str(body.get("boolean_query", existing.boolean_query) or "").strip()
+        new_blocks = body.get("query_blocks", existing.query_blocks)
+        if not new_bool and isinstance(new_blocks, list) and new_blocks:
+            exc_for_build = _parse_str_list(body.get("exclusion_keywords", existing.exclusion_keywords))
+            new_bool = build_boolean_from_blocks(new_blocks, exc_for_build)
+
+        if new_bool:
+            val = validate_boolean_query(new_bool)
+            if not val["valid"]:
+                self._send_json({"error": f"Équation booléenne invalide : {val['error']}"}, status=400)
+                return
+            new_bool = val["normalized"] or new_bool
+
+        raw_queries = body.get("queries")
+        if isinstance(raw_queries, list):
+            next_queries = [str(q).strip() for q in raw_queries if str(q).strip()]
+        else:
+            next_queries = list(existing.queries)
+        if new_bool and new_bool not in next_queries:
+            next_queries = [new_bool, *[q for q in next_queries if q != existing.boolean_query]]
+
+        raw_end = body.get("audit_end_year", existing.audit_end_year)
+        next_end_year = int(raw_end) if raw_end not in (None, "", 0) else None
+
+        updated = dc_replace(
+            existing,
+            name=str(body.get("name", existing.name)).strip() or existing.name,
+            description=str(body.get("description", existing.description)),
+            domain=str(body.get("domain", existing.domain)),
+            boolean_query=new_bool,
+            query_blocks=list(new_blocks) if isinstance(new_blocks, list) else existing.query_blocks,
+            queries=next_queries or ([new_bool] if new_bool else existing.queries),
+            inclusion_keywords=(
+                [k.lower() for k in _parse_str_list(body.get("keywords"))]
+                if "keywords" in body
+                else (
+                    [k.lower() for k in _parse_str_list(body.get("inclusion_keywords"))]
+                    if "inclusion_keywords" in body
+                    else existing.inclusion_keywords
+                )
+            ),
+            exclusion_keywords=(
+                [k.lower() for k in _parse_str_list(body.get("exclusion_keywords"))]
+                if "exclusion_keywords" in body
+                else existing.exclusion_keywords
+            ),
+            high_impact_journals=(
+                _parse_str_list(body.get("high_impact_journals"))
+                if "high_impact_journals" in body
+                else existing.high_impact_journals
+            ),
+            audit_start_year=int(body.get("audit_start_year", existing.audit_start_year) or existing.audit_start_year),
+            audit_end_year=next_end_year,
+            watch_lookback_days=int(body.get("watch_lookback_days", existing.watch_lookback_days) or existing.watch_lookback_days),
+            max_results_per_source=max(
+                5,
+                min(100, int(body.get("max_results_per_source", existing.max_results_per_source) or existing.max_results_per_source)),
+            ),
+            min_relevance_score=float(body.get("min_relevance_score", existing.min_relevance_score)),
+            enabled_sources=(
+                _parse_str_list(body.get("enabled_sources")) or existing.enabled_sources
+                if "enabled_sources" in body
+                else existing.enabled_sources
+            ),
+            allowed_publication_types=(
+                _parse_str_list(body.get("allowed_publication_types"))
+                if "allowed_publication_types" in body
+                else existing.allowed_publication_types
+            ),
+            humans_only=_parse_bool_flag(body.get("humans_only"), existing.humans_only)
+            if "humans_only" in body
+            else existing.humans_only,
+            open_access_only=_parse_bool_flag(body.get("open_access_only"), existing.open_access_only)
+            if "open_access_only" in body
+            else existing.open_access_only,
+            exclude_preprints=_parse_bool_flag(body.get("exclude_preprints"), existing.exclude_preprints)
+            if "exclude_preprints" in body
+            else existing.exclude_preprints,
+            strict_boolean=_parse_bool_flag(body.get("strict_boolean"), existing.strict_boolean)
+            if "strict_boolean" in body
+            else existing.strict_boolean,
+            search_languages=(
+                _parse_str_list(body.get("search_languages"))
+                if "search_languages" in body
+                else existing.search_languages
+            ),
+            min_citations=max(0, int(body.get("min_citations", existing.min_citations) or 0)),
+            min_sample_size=max(0, int(body.get("min_sample_size", existing.min_sample_size) or 0)),
+            min_quality_score=max(0.0, float(body.get("min_quality_score", existing.min_quality_score) or 0.0)),
+        )
+        saved_path = save_topic_profile(updated, self.pipeline.config.profiles_dir)
+        self._send_json(
+            {
+                "status": "updated",
+                "path": str(saved_path),
+                "profile": updated.to_dict(),
+            },
+            status=200,
+        )
 
     def do_DELETE(self) -> None:
         parsed = urllib.parse.urlparse(self.path)

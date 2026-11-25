@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from mykairn_sciwatch.models import ClassifiedPublication, WatchRunSummary
+from mykairn_sciwatch.search_syntax import BooleanSyntaxError, matches_boolean_query, parse_boolean_query
 
 
 class SciWatchStore:
@@ -281,16 +282,20 @@ class SciWatchStore:
         quality_grade: Optional[str] = None,
         min_quality: float = 0.0,
         min_scope: float = 0.0,
+        min_citations: int = 0,
+        min_sample_size: int = 0,
         year_from: Optional[int] = None,
         year_to: Optional[int] = None,
         search_query: Optional[str] = None,
         only_foundational: bool = False,
         only_open_access: bool = False,
+        exclude_preprints: bool = False,
+        sources_filter: Optional[List[str]] = None,
         sort_by: str = "overall_score",
         limit: int = 200,
         offset: int = 0,
     ) -> List[ClassifiedPublication]:
-        """Requête multi-critères filtrée et triée sur la base de publications."""
+        """Requête multi-critères filtrée (incluant syntaxe booléenne complète) et triée sur la base de publications."""
         clauses: List[str] = ["1=1"]
         params: List[Any] = []
 
@@ -315,6 +320,12 @@ class SciWatchStore:
         if min_scope > 0:
             clauses.append("scope_score >= ?")
             params.append(min_scope)
+        if min_citations > 0:
+            clauses.append("citation_count >= ?")
+            params.append(min_citations)
+        if min_sample_size > 0:
+            clauses.append("sample_size IS NOT NULL AND sample_size >= ?")
+            params.append(min_sample_size)
         if year_from:
             clauses.append("publication_year >= ?")
             params.append(year_from)
@@ -325,12 +336,17 @@ class SciWatchStore:
             clauses.append("is_foundational = 1")
         if only_open_access:
             clauses.append("is_open_access = 1")
-        if search_query and search_query.strip():
-            like_q = f"%{search_query.strip()}%"
-            clauses.append(
-                "(title LIKE ? OR abstract LIKE ? OR summary_fr LIKE ? OR practical_takeaway LIKE ? OR journal LIKE ?)"
-            )
-            params.extend([like_q, like_q, like_q, like_q, like_q])
+        if exclude_preprints:
+            clauses.append("publication_type != 'preprint'")
+        if sources_filter:
+            src_clauses = []
+            for s in sources_filter:
+                s_clean = s.strip()
+                if s_clean:
+                    src_clauses.append("sources_json LIKE ?")
+                    params.append(f'%"{s_clean}"%')
+            if src_clauses:
+                clauses.append(f"({' OR '.join(src_clauses)})")
 
         allowed_sorts = {
             "overall_score": "overall_score DESC, quality_score DESC",
@@ -341,6 +357,25 @@ class SciWatchStore:
             "evidence_tier": "evidence_tier ASC, overall_score DESC",
         }
         order_clause = allowed_sorts.get(sort_by, allowed_sorts["overall_score"])
+
+        has_search = bool(search_query and search_query.strip())
+        if has_search:
+            # Pré-filtrage en base sur tous les critères indexés puis évaluation booléenne AST exacte en Python
+            sql = f"SELECT * FROM publications WHERE {' AND '.join(clauses)} ORDER BY {order_clause} LIMIT 2500"
+            with self._connect() as conn:
+                rows = conn.execute(sql, params).fetchall()
+            pubs = [self._row_to_publication(r) for r in rows]
+            raw_q = (search_query or "").strip()
+            try:
+                ast = parse_boolean_query(raw_q)
+            except BooleanSyntaxError:
+                ast = None
+            if ast is not None:
+                matched = [p for p in pubs if matches_boolean_query(p, ast)]
+            else:
+                needle = raw_q.lower()
+                matched = [p for p in pubs if matches_boolean_query(p, needle)]
+            return matched[offset : offset + limit]
 
         sql = (
             f"SELECT * FROM publications WHERE {' AND '.join(clauses)} "
