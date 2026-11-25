@@ -5,6 +5,8 @@ Service de notification Digest Email (via Brevo API v3) et Webhook vers myKairn 
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List
 
@@ -81,19 +83,35 @@ class DigestNotifier:
 
     def push_webhook(self, knowledge_pack: Dict[str, Any]) -> bool:
         """Pousse le Knowledge Pack JSON vers MYKAIRN_WEBHOOK_URL si configuré."""
-        if not self.config.mykairn_webhook_url:
+        target_url = (self.config.mykairn_webhook_url or "").strip()
+        if not target_url:
             return False
+        parsed = urllib.parse.urlparse(target_url)
+        if parsed.netloc.lower() == "mykairn.fr":
+            target_url = urllib.parse.urlunparse(parsed._replace(scheme="https", netloc="www.mykairn.fr"))
+
+        payload_bytes = json.dumps(knowledge_pack).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.config.mykairn_webhook_secret:
             headers["X-SciWatch-Secret"] = self.config.mykairn_webhook_secret
-        try:
-            req = urllib.request.Request(
-                self.config.mykairn_webhook_url,
-                data=json.dumps(knowledge_pack).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                return 200 <= resp.status < 300
-        except Exception:
-            return False
+
+        for _ in range(3):
+            try:
+                req = urllib.request.Request(
+                    target_url,
+                    data=payload_bytes,
+                    headers=headers,
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return 200 <= resp.status < 300
+            except urllib.error.HTTPError as err:
+                if err.code in (301, 302, 307, 308):
+                    location = err.headers.get("Location")
+                    if location:
+                        target_url = urllib.parse.urljoin(target_url, location)
+                        continue
+                return False
+            except Exception:
+                return False
+        return False
